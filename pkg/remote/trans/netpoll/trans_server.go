@@ -25,6 +25,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/cloudwego/netpoll"
 
@@ -47,6 +48,7 @@ func (f *netpollTransServerFactory) NewTransServer(opt *remote.ServerOption, tra
 		opt:       opt,
 		transHdlr: transHdlr,
 		lncfg:     trans.NewListenConfig(opt),
+		stopChan:  make(chan struct{}, 1),
 	}
 }
 
@@ -59,6 +61,10 @@ type transServer struct {
 	lncfg     net.ListenConfig
 	connCount utils.AtomicInt
 	sync.Mutex
+
+	windowConnected    utils.AtomicInt
+	windowDisconnected utils.AtomicInt
+	stopChan           chan struct{}
 }
 
 var _ remote.TransServer = &transServer{}
@@ -99,6 +105,24 @@ func (ts *transServer) BootstrapServer(ln net.Listener) (err error) {
 	if err != nil {
 		return err
 	}
+	go func() {
+		tc := time.NewTicker(10 * time.Second)
+		defer tc.Stop()
+		for {
+			select {
+			case <-tc.C:
+				cc := ts.windowConnected.Value()
+				dcc := ts.windowDisconnected.Value()
+				if cc > 0 || dcc > 0 {
+					klog.Infof("KITEX: new connection count=%d, closed conn count=%d in 10s", cc, dcc)
+				}
+				ts.windowConnected.Store(0)
+				ts.windowDisconnected.Store(0)
+			case <-ts.stopChan:
+				return
+			}
+		}
+	}()
 	return ts.evl.Serve(ts.ln)
 }
 
@@ -106,7 +130,10 @@ func (ts *transServer) BootstrapServer(ln net.Listener) (err error) {
 func (ts *transServer) Shutdown() (err error) {
 	ts.Lock()
 	defer ts.Unlock()
-
+	select {
+	case ts.stopChan <- struct{}{}:
+	default:
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ts.opt.ExitWaitTime)
 	defer cancel()
 	if g, ok := ts.transHdlr.(remote.GracefulShutdown); ok {
@@ -141,6 +168,7 @@ func (ts *transServer) onConnActive(conn netpoll.Connection) context.Context {
 		return nil
 	})
 	ts.connCount.Inc()
+	ts.windowConnected.Inc()
 	ctx, err := ts.transHdlr.OnActive(ctx, conn)
 	if err != nil {
 		ts.onError(ctx, err, conn)
@@ -162,6 +190,7 @@ func (ts *transServer) onConnRead(ctx context.Context, conn netpoll.Connection) 
 func (ts *transServer) onConnInactive(ctx context.Context, conn netpoll.Connection) {
 	defer transRecover(ctx, conn, "OnInactive")
 	ts.connCount.Dec()
+	ts.windowDisconnected.Inc()
 	ts.transHdlr.OnInactive(ctx, conn)
 }
 

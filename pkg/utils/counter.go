@@ -35,3 +35,8 @@ func (i *AtomicInt) Dec() {
 func (i *AtomicInt) Value() int {
 	return int(atomic.LoadInt32((*int32)(i)))
 }
+
+// Store set val.
+func (i *AtomicInt) Store(n int) {
+	atomic.StoreInt32((*int32)(i), int32(n))
+}
