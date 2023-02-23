@@ -121,8 +121,8 @@ func NewOptions(opts []Option) *Options {
 		TracerCtl: &internal_stats.Controller{},
 		Registry:  registry.NoopRegistry,
 	}
-	ApplyOptions(opts, o)
 	o.MetaHandlers = append(o.MetaHandlers, transmeta.MetainfoServerHandler)
+	ApplyOptions(opts, o)
 	rpcinfo.AsMutableRPCConfig(o.Configs).LockConfig(o.LockBits)
 	if o.StatsLevel == nil {
 		level := stats.LevelDisabled
