@@ -60,6 +60,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 		data = mcache.Malloc(size + 5)
 		t.FastWrite(data[5:])
 		binary.BigEndian.PutUint32(data[1:5], uint32(size))
+		data[0] = 0xb7 // added for reproducing https://github.com/grpc/grpc/issues/32257
 		return writer.WriteData(data)
 	case marshaler:
 		// TODO: reuse data buffer when we can free it safely
@@ -69,6 +70,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 			return err
 		}
 		binary.BigEndian.PutUint32(data[1:5], uint32(size))
+		data[0] = 0xb7 // added for reproducing https://github.com/grpc/grpc/issues/32257
 		return writer.WriteData(data)
 	case protobufV2MsgCodec:
 		data, err = t.XXX_Marshal(nil, true)
