@@ -97,15 +97,14 @@ func (c *muxCliConn) OnRequest(ctx context.Context, connection netpoll.Connectio
 		}
 		return
 	}
-	go func() {
-		asyncCallback, ok := c.seqIDMap.load(seqID)
-		if !ok {
-			reader.(io.Closer).Close()
-			return
-		}
-		bufReader := np.NewReaderByteBuffer(reader)
-		asyncCallback.Recv(bufReader, nil)
-	}()
+
+	asyncCallback, ok := c.seqIDMap.load(seqID)
+	if !ok {
+		reader.(io.Closer).Close()
+		return
+	}
+	bufReader := np.NewReaderByteBuffer(reader)
+	asyncCallback.Recv(bufReader, nil)
 	return nil
 }
 
