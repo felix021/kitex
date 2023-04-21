@@ -98,8 +98,10 @@ func (r *backupRetryer) Do(ctx context.Context, rpcCall RPCCallFunc, firstRI rpc
 	cbKey, _ := r.cbContainer.cbCtl.GetKey(ctx, req)
 	timer := time.NewTimer(retryDelay)
 	defer func() {
-		if panicInfo := recover(); panicInfo != nil {
-			err = panicToErr(ctx, panicInfo, firstRI)
+		if gofunc.NeedRecover() {
+			if panicInfo := recover(); panicInfo != nil {
+				err = panicToErr(ctx, panicInfo, firstRI)
+			}
 		}
 		timer.Stop()
 	}()
@@ -118,8 +120,10 @@ func (r *backupRetryer) Do(ctx context.Context, rpcCall RPCCallFunc, firstRI rpc
 					cRI rpcinfo.RPCInfo
 				)
 				defer func() {
-					if panicInfo := recover(); panicInfo != nil {
-						e = panicToErr(ctx, panicInfo, firstRI)
+					if gofunc.NeedRecover() {
+						if panicInfo := recover(); panicInfo != nil {
+							e = panicToErr(ctx, panicInfo, firstRI)
+						}
 					}
 					done <- &resultWrapper{cRI, e}
 				}()

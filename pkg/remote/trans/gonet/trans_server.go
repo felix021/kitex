@@ -20,6 +20,7 @@ package gonet
 import (
 	"context"
 	"errors"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"net"
 	"os"
 	"runtime/debug"
@@ -203,6 +204,9 @@ func (bc *bufioConn) Reader() netpoll.Reader {
 }
 
 func transRecover(ctx context.Context, conn net.Conn, funcName string) {
+	if !gofunc.NeedRecover() {
+		return
+	}
 	panicErr := recover()
 	if panicErr != nil {
 		if conn != nil {

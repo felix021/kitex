@@ -118,7 +118,10 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) error {
 			}
 			rCtx = t.startTracer(rCtx, ri)
 			defer func() {
-				panicErr := recover()
+				var panicErr interface{}
+				if gofunc.NeedRecover() {
+					panicErr = recover()
+				}
 				if panicErr != nil {
 					if conn != nil {
 						klog.CtxErrorf(rCtx, "KITEX: gRPC panic happened, close conn, remoteAddress=%s, error=%s\nstack=%s", conn.RemoteAddr(), panicErr, string(debug.Stack()))

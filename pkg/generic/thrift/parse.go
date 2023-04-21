@@ -19,6 +19,7 @@ package thrift
 import (
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"runtime/debug"
 
 	"github.com/cloudwego/thriftgo/parser"
@@ -225,9 +226,11 @@ func addFunction(fn *parser.Function, tree *parser.Thrift, sDsc *descriptor.Serv
 		HasRequestBase: hasRequestBase,
 	}
 	defer func() {
-		if ret := recover(); ret != nil {
-			klog.Errorf("KITEX: router handle failed, err=%v\nstack=%s", ret, string(debug.Stack()))
-			err = fmt.Errorf("router handle failed, err=%v", ret)
+		if gofunc.NeedRecover() {
+			if ret := recover(); ret != nil {
+				klog.Errorf("KITEX: router handle failed, err=%v\nstack=%s", ret, string(debug.Stack()))
+				err = fmt.Errorf("router handle failed, err=%v", ret)
+			}
 		}
 	}()
 	for _, ann := range fn.Annotations {

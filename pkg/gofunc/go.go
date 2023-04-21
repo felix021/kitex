@@ -18,6 +18,7 @@ package gofunc
 
 import (
 	"context"
+	"os"
 	"runtime/debug"
 	"sync"
 
@@ -26,6 +27,12 @@ import (
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/profiler"
 )
+
+var noRecover = os.Getenv("KITEX_NO_RECOVER") != ""
+
+func NeedRecover() bool {
+	return !noRecover
+}
 
 // GoTask is used to spawn a new task.
 type GoTask func(context.Context, func())
@@ -48,22 +55,24 @@ func init() {
 func RecoverGoFuncWithInfo(ctx context.Context, task func(), info *Info) {
 	GoFunc(ctx, func() {
 		defer func() {
-			if panicErr := recover(); panicErr != nil {
-				if info.RemoteService == "" {
-					info.RemoteService = "unknown"
-				}
-				if info.RemoteAddr == "" {
-					info.RemoteAddr = "unknown"
-				}
-				stack := string(debug.Stack())
-				klog.CtxErrorf(ctx, "KITEX: panic happened, remoteService=%s remoteAddress=%s error=%v\nstack=%s",
-					info.RemoteService, info.RemoteAddr, panicErr, stack)
+			if NeedRecover() {
+				if panicErr := recover(); panicErr != nil {
+					if info.RemoteService == "" {
+						info.RemoteService = "unknown"
+					}
+					if info.RemoteAddr == "" {
+						info.RemoteAddr = "unknown"
+					}
+					stack := string(debug.Stack())
+					klog.CtxErrorf(ctx, "KITEX: panic happened, remoteService=%s remoteAddress=%s error=%v\nstack=%s",
+						info.RemoteService, info.RemoteAddr, panicErr, stack)
 
-				phLock.RLock()
-				if panicHandler != nil {
-					panicHandler(info, panicErr, stack)
+					phLock.RLock()
+					if panicHandler != nil {
+						panicHandler(info, panicErr, stack)
+					}
+					phLock.RUnlock()
 				}
-				phLock.RUnlock()
 			}
 			infoPool.Put(info)
 		}()

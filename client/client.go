@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -528,8 +529,10 @@ func (kc *kClient) invokeHandleEndpoint() (endpoint.Endpoint, error) {
 // Close is not concurrency safe.
 func (kc *kClient) Close() error {
 	defer func() {
-		if err := recover(); err != nil {
-			klog.Warnf("KITEX: panic when close client, error=%s, stack=%s", err, string(debug.Stack()))
+		if gofunc.NeedRecover() {
+			if err := recover(); err != nil {
+				klog.Warnf("KITEX: panic when close client, error=%s, stack=%s", err, string(debug.Stack()))
+			}
 		}
 	}()
 	if kc.closed {

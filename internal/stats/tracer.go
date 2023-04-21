@@ -18,6 +18,7 @@ package stats
 
 import (
 	"context"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"runtime/debug"
 
 	"github.com/cloudwego/kitex/pkg/klog"
@@ -67,7 +68,9 @@ func (c *Controller) HasTracer() bool {
 }
 
 func (c *Controller) tryRecover(ctx context.Context) {
-	if err := recover(); err != nil {
-		klog.CtxWarnf(ctx, "Panic happened during tracer call. This doesn't affect the rpc call, but may lead to lack of monitor data such as metrics and logs: error=%s, stack=%s", err, string(debug.Stack()))
+	if gofunc.NeedRecover() {
+		if err := recover(); err != nil {
+			klog.CtxWarnf(ctx, "Panic happened during tracer call. This doesn't affect the rpc call, but may lead to lack of monitor data such as metrics and logs: error=%s, stack=%s", err, string(debug.Stack()))
+		}
 	}
 }

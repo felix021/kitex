@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"net"
 	"reflect"
 	"runtime/debug"
@@ -278,10 +279,12 @@ func (s *server) invokeHandleEndpoint() endpoint.Endpoint {
 			return errors.New("method name is empty in rpcinfo, should not happen")
 		}
 		defer func() {
-			if handlerErr := recover(); handlerErr != nil {
-				err = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in biz handler] %s", handlerErr), string(debug.Stack()))
-				rpcStats := rpcinfo.AsMutableRPCStats(ri.Stats())
-				rpcStats.SetPanicked(err)
+			if gofunc.NeedRecover() {
+				if handlerErr := recover(); handlerErr != nil {
+					err = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in biz handler] %s", handlerErr), string(debug.Stack()))
+					rpcStats := rpcinfo.AsMutableRPCStats(ri.Stats())
+					rpcStats.SetPanicked(err)
+				}
 			}
 			internal_stats.Record(ctx, ri, stats.ServerHandleFinish, err)
 		}()

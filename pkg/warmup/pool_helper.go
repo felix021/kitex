@@ -18,6 +18,7 @@ package warmup
 
 import (
 	"context"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"net"
 	"sync"
 
@@ -47,8 +48,10 @@ func (p *PoolHelper) WarmUp(po *PoolOption, pool remote.ConnPool, co remote.Conn
 		go func() {
 			defer wg.Done()
 			defer func() {
-				if x := recover(); x != nil {
-					klog.Errorf("KITEX: warmup: unexpected error: %+v", x)
+				if gofunc.NeedRecover() {
+					if x := recover(); x != nil {
+						klog.Errorf("KITEX: warmup: unexpected error: %+v", x)
+					}
 				}
 			}()
 			o := &worker{

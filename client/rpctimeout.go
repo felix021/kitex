@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"runtime/debug"
 	"time"
 
@@ -123,9 +124,11 @@ func rpcTimeoutMW(mwCtx context.Context) endpoint.Middleware {
 			done := make(chan error, 1)
 			workerPool.GoCtx(ctx, func() {
 				defer func() {
-					if panicInfo := recover(); panicInfo != nil {
-						e := panicToErr(ctx, panicInfo, ri)
-						done <- e
+					if gofunc.NeedRecover() {
+						if panicInfo := recover(); panicInfo != nil {
+							e := panicToErr(ctx, panicInfo, ri)
+							done <- e
+						}
 					}
 					if err == nil || !errors.Is(err, kerrors.ErrRPCFinish) {
 						// Don't regards ErrRPCFinish as normal error, it happens in retry scene,

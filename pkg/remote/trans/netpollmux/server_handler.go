@@ -206,7 +206,10 @@ func (t *svrTransHandler) task(muxSvrConnCtx context.Context, conn net.Conn, rea
 	var sendMsg remote.Message
 	var closeConn bool
 	defer func() {
-		panicErr := recover()
+		var panicErr interface{}
+		if gofunc.NeedRecover() {
+			panicErr = recover()
+		}
 		if panicErr != nil {
 			if conn != nil {
 				ri := rpcinfo.GetRPCInfo(ctx)
@@ -420,6 +423,9 @@ func (t *svrTransHandler) writeErrorReplyIfNeeded(
 }
 
 func (t *svrTransHandler) tryRecover(ctx context.Context, conn net.Conn) {
+	if !gofunc.NeedRecover() {
+		return
+	}
 	if err := recover(); err != nil {
 		// rpcStat := internal.AsMutableRPCStats(t.rpcinfo.Stats())
 		// rpcStat.SetPanicked(err)

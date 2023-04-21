@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"net"
 	"runtime/debug"
 
@@ -119,21 +120,24 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) (err error)
 	var sendMsg remote.Message
 	closeConnOutsideIfErr := true
 	defer func() {
-		panicErr := recover()
+		var panicErr interface{}
 		var wrapErr error
-		if panicErr != nil {
-			stack := string(debug.Stack())
-			if conn != nil {
-				ri := rpcinfo.GetRPCInfo(ctx)
-				rService, rAddr := getRemoteInfo(ri, conn)
-				klog.CtxErrorf(ctx, "KITEX: panic happened, remoteAddress=%s, remoteService=%s, error=%v\nstack=%s", rAddr, rService, panicErr, stack)
-			} else {
-				klog.CtxErrorf(ctx, "KITEX: panic happened, error=%v\nstack=%s", panicErr, stack)
-			}
-			if err != nil {
-				wrapErr = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in OnRead] %s, last error=%s", panicErr, err.Error()), stack)
-			} else {
-				wrapErr = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in OnRead] %s", panicErr), stack)
+		if gofunc.NeedRecover() {
+			panicErr = recover()
+			if panicErr != nil {
+				stack := string(debug.Stack())
+				if conn != nil {
+					ri := rpcinfo.GetRPCInfo(ctx)
+					rService, rAddr := getRemoteInfo(ri, conn)
+					klog.CtxErrorf(ctx, "KITEX: panic happened, remoteAddress=%s, remoteService=%s, error=%v\nstack=%s", rAddr, rService, panicErr, stack)
+				} else {
+					klog.CtxErrorf(ctx, "KITEX: panic happened, error=%v\nstack=%s", panicErr, stack)
+				}
+				if err != nil {
+					wrapErr = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in OnRead] %s, last error=%s", panicErr, err.Error()), stack)
+				} else {
+					wrapErr = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in OnRead] %s", panicErr), stack)
+				}
 			}
 		}
 		t.finishTracer(ctx, ri, err, panicErr)

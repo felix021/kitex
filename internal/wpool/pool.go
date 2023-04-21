@@ -23,6 +23,7 @@ package wpool
 
 import (
 	"context"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
@@ -78,8 +79,10 @@ func (p *Pool) GoCtx(ctx context.Context, task Task) {
 	atomic.AddInt32(&p.size, 1)
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				klog.Errorf("panic in wpool: error=%v: stack=%s", r, debug.Stack())
+			if gofunc.NeedRecover() {
+				if r := recover(); r != nil {
+					klog.Errorf("panic in wpool: error=%v: stack=%s", r, debug.Stack())
+				}
 			}
 			atomic.AddInt32(&p.size, -1)
 		}()

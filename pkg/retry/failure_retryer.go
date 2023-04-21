@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,8 +99,10 @@ func (r *failureRetryer) Do(ctx context.Context, rpcCall RPCCallFunc, firstRI rp
 	var cRI rpcinfo.RPCInfo
 	cbKey, _ := r.cbContainer.cbCtl.GetKey(ctx, req)
 	defer func() {
-		if panicInfo := recover(); panicInfo != nil {
-			err = panicToErr(ctx, panicInfo, firstRI)
+		if gofunc.NeedRecover() {
+			if panicInfo := recover(); panicInfo != nil {
+				err = panicToErr(ctx, panicInfo, firstRI)
+			}
 		}
 	}()
 	startTime := time.Now()

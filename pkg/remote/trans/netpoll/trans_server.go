@@ -21,6 +21,7 @@ package netpoll
 import (
 	"context"
 	"errors"
+	"github.com/cloudwego/kitex/pkg/gofunc"
 	"net"
 	"runtime/debug"
 	"sync"
@@ -176,6 +177,9 @@ func (ts *transServer) onError(ctx context.Context, err error, conn netpoll.Conn
 }
 
 func transRecover(ctx context.Context, conn netpoll.Connection, funcName string) {
+	if !gofunc.NeedRecover() {
+		return
+	}
 	panicErr := recover()
 	if panicErr != nil {
 		if conn != nil {
