@@ -33,18 +33,14 @@ var (
 const TypeRPCTimeout iface.ItemType = "rpc_timeout"
 
 var defaultRPCTimeout = &RPCTimeout{
-	RPCTimeoutMS:   1000,
-	ConnTimeoutMS:  50,
-	ReadTimeoutMS:  1000,
-	WriteTimeoutMS: 1000,
+	RPCTimeoutMS:  1000,
+	ConnTimeoutMS: 50,
 }
 
 // RPCTimeout is used as itemValue in ConfigValueImpl
 type RPCTimeout struct {
-	RPCTimeoutMS   int `json:"rpc_timeout_ms"`
-	ConnTimeoutMS  int `json:"conn_timeout_ms"`
-	ReadTimeoutMS  int `json:"read_timeout_ms"`
-	WriteTimeoutMS int `json:"write_timeout_ms"`
+	RPCTimeoutMS  int `json:"rpc_timeout_ms"`
+	ConnTimeoutMS int `json:"conn_timeout_ms"`
 }
 
 // NewRPCTimeout is a function decoding json bytes to a RPCTimeout object
@@ -60,10 +56,8 @@ func CopyDefaultRPCTimeout() iface.ConfigValueItem {
 // DeepCopy returns a copy of the current RPCTimeout
 func (r *RPCTimeout) DeepCopy() iface.ConfigValueItem {
 	result := &RPCTimeout{
-		RPCTimeoutMS:   r.RPCTimeoutMS,
-		ConnTimeoutMS:  r.ConnTimeoutMS,
-		ReadTimeoutMS:  r.ReadTimeoutMS,
-		WriteTimeoutMS: r.WriteTimeoutMS,
+		RPCTimeoutMS:  r.RPCTimeoutMS,
+		ConnTimeoutMS: r.ConnTimeoutMS,
 	}
 	return result
 }
@@ -71,9 +65,7 @@ func (r *RPCTimeout) DeepCopy() iface.ConfigValueItem {
 // EqualsTo returns true if the current RPCTimeout equals to the other RPCTimeout
 func (r *RPCTimeout) EqualsTo(other iface.ConfigValueItem) bool {
 	o := other.(*RPCTimeout)
-	return r.WriteTimeoutMS == o.WriteTimeoutMS &&
-		r.ReadTimeoutMS == o.ReadTimeoutMS &&
-		r.ConnTimeoutMS == o.ConnTimeoutMS &&
+	return r.ConnTimeoutMS == o.ConnTimeoutMS &&
 		r.RPCTimeoutMS == o.RPCTimeoutMS
 }
 
@@ -89,5 +81,5 @@ func (r *RPCTimeout) ConnectTimeout() time.Duration {
 
 // ReadWriteTimeout implements rpcinfo.Timeouts
 func (r *RPCTimeout) ReadWriteTimeout() time.Duration {
-	return time.Duration(r.ReadTimeoutMS) * time.Millisecond
+	return time.Duration(r.RPCTimeoutMS) * time.Millisecond
 }
