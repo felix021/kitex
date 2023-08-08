@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudwego/fastpb"
 
+	// "github.com/cloudwego/kitex/pkg/generic"
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/perrors"
@@ -41,20 +42,29 @@ import (
  *	+----------------------------------------------------------------------------------------------+
  */
 
+// type CodecType int
+
 const (
 	metaInfoFixLen = 8
+	// FastWrite      CodecType = 1 << iota
+	// FastRead
 )
 
 // NewProtobufCodec ...
 func NewProtobufCodec() remote.PayloadCodec {
+	// return &protobufCodec{FastWrite | FastRead}
 	return &protobufCodec{}
 }
 
 // protobufCodec implements  PayloadMarshaler
-type protobufCodec struct{}
+type protobufCodec struct {
+	// CodecType
+}
 
 // Len encode outside not here
 func (c protobufCodec) Marshal(ctx context.Context, message remote.Message, out remote.ByteBuffer) error {
+	// fmt.Print("\nLog: Remote/generic/proto's Marshal called\n")
+
 	// 1. prepare info
 	methodName := message.RPCInfo().Invocation().MethodName()
 	if methodName == "" {
@@ -98,6 +108,7 @@ func (c protobufCodec) Marshal(ctx context.Context, message remote.Message, out 
 	}
 
 	var actualMsgBuf []byte
+	// calls generic service msg
 	if actualMsgBuf, err = msg.Marshal(actualMsgBuf); err != nil {
 		return perrors.NewProtocolErrorWithErrMsg(err, fmt.Sprintf("protobuf marshal message failed: %s", err.Error()))
 	}
@@ -108,6 +119,8 @@ func (c protobufCodec) Marshal(ctx context.Context, message remote.Message, out 
 }
 
 func (c protobufCodec) Unmarshal(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
+	// fmt.Print("\nLog: Remote/generic/proto's Unmarshal called\n")
+
 	payloadLen := message.PayloadLen()
 	magicAndMsgType, err := codec.ReadUint32(in)
 	if err != nil {
@@ -117,9 +130,6 @@ func (c protobufCodec) Unmarshal(ctx context.Context, message remote.Message, in
 		return perrors.NewProtocolErrorWithType(perrors.BadVersion, "Bad version in protobuf Unmarshal")
 	}
 	msgType := magicAndMsgType & codec.FrontMask
-	if err := codec.UpdateMsgType(msgType, message); err != nil {
-		return err
-	}
 
 	methodName, methodFieldLen, err := codec.ReadString(in)
 	if err != nil {
@@ -153,6 +163,13 @@ func (c protobufCodec) Unmarshal(ctx context.Context, message remote.Message, in
 		return err
 	}
 	data := message.Data()
+
+	// Added: calls SetMethod from generic_service.go to set the method
+	// Set the method name on the message data before unmarshalling
+	if dataWithMethod, ok := data.(interface{ SetMethod(string) }); ok {
+		dataWithMethod.SetMethod(methodName)
+	}
+
 	// fast read
 	if msg, ok := data.(fastpb.Reader); ok {
 		if len(actualMsgBuf) == 0 {

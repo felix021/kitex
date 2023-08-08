@@ -22,6 +22,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 
+	gproto "github.com/cloudwego/kitex/pkg/generic/proto"
 	gthrift "github.com/cloudwego/kitex/pkg/generic/thrift"
 	codecThrift "github.com/cloudwego/kitex/pkg/remote/codec/thrift"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
@@ -185,4 +186,48 @@ func (r *Result) IsSetSuccess() bool {
 // GetResult ...
 func (r *Result) GetResult() interface{} {
 	return r.Success
+}
+
+// SetMethod to be used in pkg/remote/protobuf's Unmarshal
+// allows for method string to be set in Args without changing method signature
+func (a *Args) SetMethod(method string) {
+	a.Method = method
+}
+
+func (a *Args) Marshal(out []byte) ([]byte, error) {
+	if w, ok := a.inner.(gproto.MessageWriter); ok {
+		// fmt.Print("\nLog: generic service's Marshal(Args) called\n")
+		return w.Write(context.Background(), out, a.Request)
+	}
+	return nil, fmt.Errorf("unexpected Args writer type: %T", a.inner)
+}
+
+func (a *Args) Unmarshal(in []byte) error {
+	if r, ok := a.inner.(gproto.MessageReader); ok {
+		// fmt.Print("\nLog: generic service's Unmarshal(Args) called\n")
+		request, err := r.Read(context.Background(), in)
+		a.Request = request
+		return err
+	}
+	return fmt.Errorf("unexpected Args reader type: %T", a.inner)
+}
+
+// Write ...
+func (r *Result) Marshal(out []byte) ([]byte, error) {
+	if w, ok := r.inner.(gproto.MessageWriter); ok {
+		// fmt.Printf("\nLog: generic service's Marshal(Result) called\n")
+		return w.Write(context.Background(), out, r.Success)
+	}
+	return nil, fmt.Errorf("unexpected Result writer type: %T", r.inner)
+}
+
+// Read ...
+func (r *Result) Unmarshal(in []byte) error {
+	if w, ok := r.inner.(gproto.MessageReader); ok {
+		// fmt.Printf("\nLog: generic service's Unmarshal(Result) called\n")
+		var err error
+		r.Success, err = w.Read(context.Background(), in)
+		return err
+	}
+	return fmt.Errorf("unexpected Result reader type: %T", r.inner)
 }

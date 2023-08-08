@@ -18,6 +18,7 @@ package generic
 
 import (
 	"errors"
+	"io/ioutil"
 	"sync"
 
 	"github.com/jhump/protoreflect/desc/protoparse"
@@ -31,6 +32,40 @@ type PbContentProvider struct {
 }
 
 var _ PbDescriptorProvider = (*PbContentProvider)(nil)
+
+// to be used by client
+// NewPbFileProvider creates a PbDescriptorProvider by given path and include dirs
+func NewPbFileProvider(filePath string, includeDirs ...string) (PbDescriptorProvider, error) {
+	p := &PbContentProvider{
+		svcs: make(chan proto.ServiceDescriptor, 1),
+	}
+
+	// Read main file
+	mainFileContent, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read include files
+	includes := make(map[string]string)
+	includes[filePath] = string(mainFileContent) // include main file in includes map
+	for _, includeFilePath := range includeDirs {
+		includeFileContent, err := ioutil.ReadFile(includeFilePath)
+		if err != nil {
+			return nil, err
+		}
+		includes[includeFilePath] = string(includeFileContent)
+	}
+
+	// Here we pass the main file's name and content as a part of includes
+	sd, err := parseProto(filePath, includes)
+	if err != nil {
+		return nil, err
+	}
+	p.svcs <- sd
+
+	return p, nil
+}
 
 func NewPbContentProvider(main string, includes map[string]string) (PbDescriptorProvider, error) {
 	p := &PbContentProvider{

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/kitex/pkg/remote"
+	"github.com/cloudwego/kitex/pkg/remote/codec/protobuf"
 	"github.com/cloudwego/kitex/pkg/remote/codec/thrift"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 )
@@ -103,11 +104,21 @@ func HTTPPbThriftGeneric(p DescriptorProvider, pbp PbDescriptorProvider) (Generi
 //	g, err := generic.JSONThriftGeneric(p)
 //	SetBinaryWithBase64(g, false)
 func JSONThriftGeneric(p DescriptorProvider) (Generic, error) {
+	//var thriftCodec = thrift.NewThriftCodec() meaning thriftCodec is from: kitex/pkg/remote/codec/thrift
 	codec, err := newJsonThriftCodec(p, thriftCodec)
 	if err != nil {
 		return nil, err
 	}
 	return &jsonThriftGeneric{codec: codec}, nil
+}
+
+// implemented JSONProtoGeneric
+func JSONProtoGeneric(p PbDescriptorProvider) (Generic, error) {
+	codec, err := newJsonProtoCodec(p, protoCodec)
+	if err != nil {
+		return nil, err
+	}
+	return &jsonProtoGeneric{codec: codec}, nil
 }
 
 // SetBinaryWithBase64 enable/disable Base64 codec for binary field.
@@ -129,6 +140,7 @@ func SetBinaryWithBase64(g Generic, enable bool) error {
 	return nil
 }
 
+// locally declared variable taken from remote/codec/thrift
 var thriftCodec = thrift.NewThriftCodec()
 
 type binaryThriftGeneric struct{}
@@ -201,6 +213,35 @@ func (g *jsonThriftGeneric) GetMethod(req interface{}, method string) (*Method, 
 func (g *jsonThriftGeneric) Close() error {
 	return g.codec.Close()
 }
+
+// implemented
+var protoCodec = protobuf.NewProtobufCodec()
+
+type jsonProtoGeneric struct {
+	codec *jsonProtoCodec
+}
+
+func (g *jsonProtoGeneric) Framed() bool {
+	return false
+}
+
+func (g *jsonProtoGeneric) PayloadCodecType() serviceinfo.PayloadCodec {
+	return serviceinfo.Protobuf
+}
+
+func (g *jsonProtoGeneric) PayloadCodec() remote.PayloadCodec {
+	return g.codec
+}
+
+func (g *jsonProtoGeneric) GetMethod(req interface{}, method string) (*Method, error) {
+	return g.codec.getMethod(req, method)
+}
+
+func (g *jsonProtoGeneric) Close() error {
+	return g.codec.Close()
+}
+
+// implementation end
 
 type httpThriftGeneric struct {
 	codec *httpThriftCodec
