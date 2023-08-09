@@ -14,16 +14,16 @@ require (
 	github.com/cloudwego/frugal v0.1.7
 	github.com/cloudwego/localsession v0.0.2
 	github.com/cloudwego/netpoll v0.4.1
-	github.com/cloudwego/thriftgo v0.2.13-0.20230804030519-2ce040e1b8ba
+	github.com/cloudwego/thriftgo v0.2.13-0.20230803090847-3db44b44369c
 	github.com/golang/mock v1.6.0
 	github.com/google/pprof v0.0.0-20220608213341-c488b8fa1db3
 	github.com/jhump/protoreflect v1.8.2
 	github.com/json-iterator/go v1.1.12
 	github.com/tidwall/gjson v1.9.3
-	golang.org/x/net v0.0.0-20221014081412-f15817d10f9b
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
-	golang.org/x/sys v0.0.0-20220817070843-5a390386f1f2
-	golang.org/x/tools v0.1.12
+	golang.org/x/net v0.12.0
+	golang.org/x/sync v0.3.0
+	golang.org/x/sys v0.10.0
+	golang.org/x/tools v0.11.1
 	google.golang.org/genproto v0.0.0-20210513213006-bf773b8c8384
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
