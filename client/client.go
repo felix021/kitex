@@ -267,6 +267,9 @@ func (kc *kClient) initLBCache() error {
 	dIdx := kc.lbf.RegisterDeleteHook(onDelete)
 	kc.opt.CloseCallbacks = append(kc.opt.CloseCallbacks, func() error {
 		kc.lbf.DeregisterDeleteHook(dIdx)
+		if !cacheOpts.Cacheable {
+			kc.lbf.Close()
+		}
 		return nil
 	})
 	return nil

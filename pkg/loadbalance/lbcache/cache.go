@@ -83,12 +83,13 @@ type Hookable interface {
 // if it has the same key(reslover.Target(target)), we will cache and reuse the Balance
 type BalancerFactory struct {
 	Hookable
-	opts       Options
-	cache      sync.Map // key -> LoadBalancer
-	resolver   discovery.Resolver
-	balancer   loadbalance.Loadbalancer
-	rebalancer loadbalance.Rebalancer
-	sfg        singleflight.Group
+	opts         Options
+	cache        sync.Map // key -> LoadBalancer
+	resolver     discovery.Resolver
+	balancer     loadbalance.Loadbalancer
+	rebalancer   loadbalance.Rebalancer
+	sfg          singleflight.Group
+	closeChannel chan struct{}
 }
 
 func cacheKey(resolver, balancer string, opts Options) string {
@@ -97,9 +98,10 @@ func cacheKey(resolver, balancer string, opts Options) string {
 
 func newBalancerFactory(resolver discovery.Resolver, balancer loadbalance.Loadbalancer, opts Options) *BalancerFactory {
 	b := &BalancerFactory{
-		opts:     opts,
-		resolver: resolver,
-		balancer: balancer,
+		opts:         opts,
+		resolver:     resolver,
+		balancer:     balancer,
+		closeChannel: make(chan struct{}, 1),
 	}
 	if rb, ok := balancer.(loadbalance.Rebalancer); ok {
 		hrb := newHookRebalancer(rb)
@@ -134,7 +136,14 @@ func NewBalancerFactory(resolver discovery.Resolver, balancer loadbalance.Loadba
 
 // watch expired balancer
 func (b *BalancerFactory) watcher() {
-	for range time.Tick(b.opts.ExpireInterval) {
+	ticker := time.NewTicker(b.opts.ExpireInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+		case <-b.closeChannel:
+			break
+		}
 		b.cache.Range(func(key, value interface{}) bool {
 			bl := value.(*Balancer)
 			if atomic.CompareAndSwapInt32(&bl.expire, 0, 1) {
@@ -181,6 +190,10 @@ func (b *BalancerFactory) Get(ctx context.Context, target rpcinfo.EndpointInfo) 
 		return nil, err
 	}
 	return val.(*Balancer), nil
+}
+
+func (b *BalancerFactory) Close() {
+	b.closeChannel <- struct{}{}
 }
 
 // Balancer same with loadbalance.Loadbalancer but without resolver.Result that
