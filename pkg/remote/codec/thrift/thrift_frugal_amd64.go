@@ -57,8 +57,8 @@ func (c thriftCodec) hyperMessageUnmarshalEnabled() bool {
 }
 
 // hyperMessageUnmarshalAvailable indicates that if high priority message codec is available.
-func hyperMessageUnmarshalAvailable(data interface{}, message remote.Message) bool {
-	if message.PayloadLen() == 0 {
+func hyperMessageUnmarshalAvailable(data interface{}, message remote.Message, checkPayloadLen bool) bool {
+	if checkPayloadLen && message.PayloadLen() == 0 {
 		return false
 	}
 	dt := reflect.TypeOf(data).Elem()

@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/felix021/thrift-util/decoder"
 
 	"github.com/cloudwego/kitex/pkg/protocol/bthrift"
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -37,6 +38,9 @@ type CodecType int
 const (
 	FastWrite CodecType = 1 << iota
 	FastRead
+
+	needPayloadLengthInHeader = true
+	skipPayloadLengthInHeader = false
 )
 
 // NewThriftCodec creates the thrift binary codec.
@@ -171,25 +175,8 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 	data := message.Data()
 
 	// decode with hyper unmarshal
-	if c.hyperMessageUnmarshalEnabled() && hyperMessageUnmarshalAvailable(data, message) {
-		msgBeginLen := bthrift.Binary.MessageBeginLength(methodName, msgType, seqID)
-		ri := message.RPCInfo()
-		rpcinfo.Record(ctx, ri, stats.WaitReadStart, nil)
-		buf, err := tProt.next(message.PayloadLen() - msgBeginLen - bthrift.Binary.MessageEndLength())
-		rpcinfo.Record(ctx, ri, stats.WaitReadFinish, err)
-		if err != nil {
-			return remote.NewTransError(remote.ProtocolError, err)
-		}
-		err = c.hyperMessageUnmarshal(buf, data)
-		if err != nil {
-			return err
-		}
-		err = tProt.ReadMessageEnd()
-		if err != nil {
-			return remote.NewTransError(remote.ProtocolError, err)
-		}
-		tProt.Recycle()
-		return nil
+	if c.hyperMessageUnmarshalEnabled() && hyperMessageUnmarshalAvailable(data, message, needPayloadLengthInHeader) {
+		return c.frugalUnmarshal(ctx, message, methodName, tProt)
 	}
 
 	// decode with FastRead
@@ -227,11 +214,52 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 			return remote.NewTransError(remote.ProtocolError, err)
 		}
 	default:
+		// fallback again to frugal, which may be slower because we need to go over the incoming packet so
+		// that we can determine the end of the thrift payload. But this requires us to do more copy which
+		// is slower
+		if c.hyperMessageUnmarshalEnabled() && hyperMessageUnmarshalAvailable(data, message, skipPayloadLengthInHeader) {
+			return c.frugalUnmarshal(ctx, message, methodName, tProt)
+		}
 		return remote.NewTransErrorWithMsg(remote.InvalidProtocol, "decode failed, codec msg type not match with thriftCodec")
 	}
 	tProt.ReadMessageEnd()
 	tProt.Recycle()
 	return err
+}
+
+func (c thriftCodec) frugalUnmarshal(ctx context.Context, message remote.Message, method string, tProt *BinaryProtocol) (err error) {
+	defer tProt.Recycle()
+	var buf []byte
+	if buf, err = c.getThriftPayloadBuf(ctx, message, tProt, method); err != nil {
+		return remote.NewTransError(remote.ProtocolError, err)
+	}
+	if err = c.hyperMessageUnmarshal(buf, message.Data()); err != nil {
+		return err
+	}
+	if err = tProt.ReadMessageEnd(); err != nil {
+		return remote.NewTransError(remote.ProtocolError, err)
+	}
+	return nil
+}
+
+func (c thriftCodec) getThriftPayloadBuf(ctx context.Context, message remote.Message, tProt *BinaryProtocol, method string) (buf []byte, err error) {
+	ri := message.RPCInfo()
+	rpcinfo.Record(ctx, ri, stats.WaitReadStart, nil)
+	defer rpcinfo.Record(ctx, ri, stats.WaitReadFinish, err)
+
+	msgBeginLen := bthrift.Binary.MessageBeginLength(method, 0, 0)
+	if payloadLength := message.PayloadLen(); payloadLength > 0 {
+		return tProt.next(payloadLength - msgBeginLen - bthrift.Binary.MessageEndLength())
+	}
+	return skipCopyThriftPayload(tProt)
+}
+
+func skipCopyThriftPayload(tProt *BinaryProtocol) (buf []byte, err error) {
+	sb := NewSkipCopyBuffer(tProt)
+	if _, err = decoder.StructSize(sb); err == nil {
+		buf = sb.Buffer()
+	}
+	return buf, err
 }
 
 // Name implements the remote.PayloadCodec interface.
