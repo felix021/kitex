@@ -55,6 +55,10 @@ const (
 	OpDone
 )
 
+var (
+	tagValueFirstTry = "0"
+)
+
 // DDLStopFunc is the definition of ddlStop func
 type DDLStopFunc func(ctx context.Context, policy StopPolicy) (bool, string)
 
@@ -169,4 +173,11 @@ func recordRetryInfo(firstRI, lastRI rpcinfo.RPCInfo, callTimes int32, lastCosts
 			firstRe.SetTag(rpcinfo.RetryLastCostTag, lastCosts)
 		}
 	}
+}
+
+// IsRetryRequest requires github.com/cloudwego/kitex >= v0.7.0
+func IsRetryRequest(ctx context.Context, request interface{}, response interface{}) bool {
+	ri := rpcinfo.GetRPCInfo(ctx)
+	retryCountStr := ri.To().DefaultTag(rpcinfo.RetryTag, tagValueFirstTry)
+	return retryCountStr != tagValueFirstTry
 }
