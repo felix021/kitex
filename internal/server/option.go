@@ -94,6 +94,9 @@ type Options struct {
 	StatsLevel *stats.Level
 
 	BackupOpt backup.Options
+
+	StartupHooks  []func()
+	ShutdownHooks []func()
 }
 
 type Limit struct {

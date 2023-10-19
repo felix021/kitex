@@ -237,11 +237,14 @@ func (s *server) Run() (err error) {
 		return err
 	default:
 	}
-	muStartHooks.Lock()
-	for i := range onServerStart {
-		go onServerStart[i]()
+
+	executeGlobalStartupHooks()
+
+	// per-server startup hooks
+	for _, f := range s.opt.StartupHooks {
+		go f()
 	}
-	muStartHooks.Unlock()
+
 	s.Lock()
 	s.buildRegistryInfo(s.svr.Address())
 	s.Unlock()
@@ -262,11 +265,12 @@ func (s *server) Stop() (err error) {
 		s.Lock()
 		defer s.Unlock()
 
-		muShutdownHooks.Lock()
-		for i := range onShutdown {
-			onShutdown[i]()
+		executeGlobalShutdownHooks()
+
+		// per-server shutdown hooks
+		for _, f := range s.opt.ShutdownHooks {
+			go f()
 		}
-		muShutdownHooks.Unlock()
 
 		if s.opt.RegistryInfo != nil {
 			err = s.opt.Registry.Deregister(s.opt.RegistryInfo)

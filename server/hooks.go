@@ -18,14 +18,18 @@ package server
 
 import "sync"
 
+// Deprecated: you're encouraged to use the `server.WithStartupHook` option instead
 // RegisterStartHook add hook which is executed after the server starts.
+// It's global hook, not suitable for a process with multiple kitex servers
 func RegisterStartHook(h func()) {
 	muStartHooks.Lock()
 	defer muStartHooks.Unlock()
 	onServerStart.add(h)
 }
 
+// Deprecated: you're encouraged to use the `server.WithShutdownHook` option instead
 // RegisterShutdownHook add hook which is executed after the server shutdown.
+// It's global hook, not suitable for a process with multiple kitex servers
 func RegisterShutdownHook(h func()) {
 	muShutdownHooks.Lock()
 	defer muShutdownHooks.Unlock()
@@ -38,6 +42,22 @@ type Hooks []func()
 // Add adds a hook.
 func (h *Hooks) add(g func()) {
 	*h = append(*h, g)
+}
+
+func executeGlobalStartupHooks() {
+	muStartHooks.Lock()
+	for i := range onServerStart {
+		go onServerStart[i]()
+	}
+	muStartHooks.Unlock()
+}
+
+func executeGlobalShutdownHooks() {
+	muShutdownHooks.Lock()
+	for i := range onShutdown {
+		onShutdown[i]()
+	}
+	muShutdownHooks.Unlock()
 }
 
 // Server hooks

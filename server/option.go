@@ -356,3 +356,19 @@ func WithContextBackup(enable, async bool) Option {
 		o.BackupOpt.EnableImplicitlyTransmitAsync = async
 	}}
 }
+
+// WithStartupHook adds a per-server startup function which will be called after this server is started
+func WithStartupHook(f func()) Option {
+	return Option{F: func(o *internal_server.Options, di *utils.Slice) {
+		di.Push(fmt.Sprintf("WithStartupHook(%+v)", f))
+		o.StartupHooks = append(o.StartupHooks, f)
+	}}
+}
+
+// WithShutdownHook adds a per-server shutdown function which will be called after this server is stopped
+func WithShutdownHook(f func()) Option {
+	return Option{F: func(o *internal_server.Options, di *utils.Slice) {
+		di.Push(fmt.Sprintf("WithShutdownHook(%+v)", f))
+		o.ShutdownHooks = append(o.ShutdownHooks, f)
+	}}
+}
