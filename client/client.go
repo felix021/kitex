@@ -389,6 +389,9 @@ func (kc *kClient) rpcCallWithRetry(ri rpcinfo.RPCInfo, method string, request, 
 			if prevRI.Load() == nil {
 				prevRI.Store(ri)
 			}
+			if r == nil {
+				panic(fmt.Sprintf("r == nil && currCallTimes = %v", currCallTimes))
+			}
 			r.Prepare(ctx, prevRI.Load().(rpcinfo.RPCInfo), cRI)
 			prevRI.Store(cRI)
 		}
