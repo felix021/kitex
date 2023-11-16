@@ -24,6 +24,7 @@ import (
 
 	"github.com/cloudwego/kitex/internal/wpool"
 	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
@@ -118,12 +119,14 @@ func rpcTimeoutMW(mwCtx context.Context) endpoint.Middleware {
 			done := make(chan error, 1)
 			workerPool.GoCtx(ctx, func() {
 				defer func() {
-					if panicInfo := recover(); panicInfo != nil {
-						e := rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, true)
-						done <- e
+					if env.AllowRecover() {
+						if panicInfo := recover(); panicInfo != nil { // AllowRecover
+							e := rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, true)
+							done <- e
+						}
 					}
 					if err == nil || !errors.Is(err, kerrors.ErrRPCFinish) {
-						// Don't regards ErrRPCFinish as normal error, it happens in retry scene,
+						// Don't regard ErrRPCFinish as normal error, it happens in retry scene,
 						// ErrRPCFinish means previous call returns first but is decoding.
 						close(done)
 					}

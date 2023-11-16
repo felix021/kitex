@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/netpoll"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
@@ -142,7 +143,10 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) error {
 			}
 			rCtx = t.startTracer(rCtx, ri)
 			defer func() {
-				panicErr := recover()
+				var panicErr interface{}
+				if env.AllowRecover() {
+					panicErr = recover() // AllowRecover
+				}
 				if panicErr != nil {
 					if conn != nil {
 						klog.CtxErrorf(rCtx, "KITEX: gRPC panic happened, close conn, remoteAddress=%s, error=%s\nstack=%s", conn.RemoteAddr(), panicErr, string(debug.Stack()))

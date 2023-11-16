@@ -24,6 +24,7 @@ import (
 	"text/template"
 
 	genfastpb "github.com/cloudwego/fastpb/protoc-gen-fastpb/generator"
+	"github.com/cloudwego/kitex/pkg/env"
 	gengo "google.golang.org/protobuf/cmd/protoc-gen-go/internal_gengo"
 	"google.golang.org/protobuf/compiler/protogen"
 
@@ -188,7 +189,10 @@ func (pp *protocPlugin) GenerateFile(gen *protogen.Plugin, file *protogen.File) 
 
 func (pp *protocPlugin) process(gen *protogen.Plugin) {
 	defer func() {
-		if e := recover(); e != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if e := recover(); e != nil { // AllowRecover
 			if err, ok := e.(error); ok {
 				gen.Error(err)
 			} else {

@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/localsession/backup"
 
 	internal_server "github.com/cloudwego/kitex/internal/server"
@@ -311,10 +312,12 @@ func (s *server) invokeHandleEndpoint() endpoint.Endpoint {
 			return errors.New("method name is empty in rpcinfo, should not happen")
 		}
 		defer func() {
-			if handlerErr := recover(); handlerErr != nil {
-				err = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in biz handler, method=%s] %s", methodName, handlerErr), string(debug.Stack()))
-				rpcStats := rpcinfo.AsMutableRPCStats(ri.Stats())
-				rpcStats.SetPanicked(err)
+			if env.AllowRecover() {
+				if handlerErr := recover(); handlerErr != nil { // AllowRecover
+					err = kerrors.ErrPanic.WithCauseAndStack(fmt.Errorf("[happened in biz handler, method=%s] %s", methodName, handlerErr), string(debug.Stack()))
+					rpcStats := rpcinfo.AsMutableRPCStats(ri.Stats())
+					rpcStats.SetPanicked(err)
+				}
 			}
 			rpcinfo.Record(ctx, ri, stats.ServerHandleFinish, err)
 			// clear session

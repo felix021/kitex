@@ -34,6 +34,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
+
+	"github.com/cloudwego/kitex/pkg/env"
 )
 
 // const of json keyword char
@@ -72,7 +74,10 @@ const (
 // Map2JSONStr transform map[string]string to json str, perf is better than use json lib directly
 func Map2JSONStr(mapInfo map[string]string) (str string, err error) {
 	defer func() {
-		if r := recover(); r != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if r := recover(); r != nil { // AllowRecover
 			if e, ok := r.(error); ok {
 				err = fmt.Errorf("Map2JSONStr panic: %w", e)
 			} else {
@@ -112,7 +117,10 @@ func Map2JSONStr(mapInfo map[string]string) (str string, err error) {
 // JSONStr2Map transform json str to map[string]string, perf is better than use json lib directly
 func JSONStr2Map(jsonStr string) (mapInfo map[string]string, err error) {
 	defer func() {
-		if r := recover(); r != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if r := recover(); r != nil { // AllowRecover
 			if e, ok := r.(error); ok {
 				err = fmt.Errorf("JSONStr2Map panic: %w", e)
 			} else {

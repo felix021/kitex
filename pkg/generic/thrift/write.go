@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/tidwall/gjson"
 
 	"github.com/cloudwego/kitex/pkg/generic/descriptor"
@@ -130,7 +131,10 @@ func typeOf(sample interface{}, t *descriptor.TypeDescriptor, opt *writerOption)
 func typeJSONOf(data *gjson.Result, t *descriptor.TypeDescriptor, opt *writerOption) (v interface{}, w writer, err error) {
 	tt := t.Type
 	defer func() {
-		if r := recover(); r != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if r := recover(); r != nil { // AllowRecover
 			err = perrors.NewProtocolErrorWithType(perrors.InvalidData, fmt.Sprintf("json convert error:%#+v", r))
 		}
 	}()

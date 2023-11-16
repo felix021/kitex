@@ -20,6 +20,7 @@ import (
 	"context"
 	"runtime/debug"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/stats"
 )
@@ -66,7 +67,10 @@ func (c *TraceController) HasTracer() bool {
 }
 
 func (c *TraceController) tryRecover(ctx context.Context) {
-	if err := recover(); err != nil {
+	if !env.AllowRecover() {
+		return
+	}
+	if err := recover(); err != nil { // AllowRecover
 		klog.CtxWarnf(ctx, "Panic happened during tracer call. This doesn't affect the rpc call, but may lead to lack of monitor data such as metrics and logs: error=%s, stack=%s", err, string(debug.Stack()))
 	}
 }

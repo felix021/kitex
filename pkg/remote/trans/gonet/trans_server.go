@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/netpoll"
 
 	"github.com/cloudwego/kitex/pkg/remote/trans"
@@ -202,7 +203,10 @@ func (bc *bufioConn) Reader() netpoll.Reader {
 }
 
 func transRecover(ctx context.Context, conn net.Conn, funcName string) {
-	panicErr := recover()
+	if !env.AllowRecover() {
+		return
+	}
+	panicErr := recover() // AllowRecover
 	if panicErr != nil {
 		if conn != nil {
 			klog.CtxErrorf(ctx, "KITEX: panic happened in %s, remoteAddress=%s, error=%v\nstack=%s", funcName, conn.RemoteAddr(), panicErr, string(debug.Stack()))

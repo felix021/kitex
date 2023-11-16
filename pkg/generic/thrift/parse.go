@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/thriftgo/parser"
 	"github.com/cloudwego/thriftgo/semantic"
 
@@ -227,7 +228,10 @@ func addFunction(fn *parser.Function, tree *parser.Thrift, sDsc *descriptor.Serv
 		HasRequestBase: hasRequestBase,
 	}
 	defer func() {
-		if ret := recover(); ret != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if ret := recover(); ret != nil { // AllowRecover
 			klog.Errorf("KITEX: router handle failed, err=%v\nstack=%s", ret, string(debug.Stack()))
 			err = fmt.Errorf("router handle failed, err=%v", ret)
 		}

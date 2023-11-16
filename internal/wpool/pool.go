@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/profiler"
 )
@@ -78,8 +79,10 @@ func (p *Pool) GoCtx(ctx context.Context, task Task) {
 	atomic.AddInt32(&p.size, 1)
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				klog.Errorf("panic in wpool: error=%v: stack=%s", r, debug.Stack())
+			if env.AllowRecover() {
+				if r := recover(); r != nil { // AllowRecover
+					klog.Errorf("panic in wpool: error=%v: stack=%s", r, debug.Stack())
+				}
 			}
 			atomic.AddInt32(&p.size, -1)
 		}()

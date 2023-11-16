@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/localsession/backup"
 
 	"github.com/cloudwego/kitex/client/callopt"
@@ -331,9 +332,11 @@ func (kc *kClient) Call(ctx context.Context, method string, request, response in
 	var reportErr error
 	var recycleRI bool
 	defer func() {
-		if panicInfo := recover(); panicInfo != nil {
-			err = rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, false)
-			reportErr = err
+		if env.AllowRecover() {
+			if panicInfo := recover(); panicInfo != nil { // AllowRecover
+				err = rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, false)
+				reportErr = err
+			}
 		}
 		kc.opt.TracerCtl.DoFinish(ctx, ri, reportErr)
 		if recycleRI {
@@ -484,8 +487,10 @@ func (kc *kClient) invokeHandleEndpoint() (endpoint.Endpoint, error) {
 // Close is not concurrency safe.
 func (kc *kClient) Close() error {
 	defer func() {
-		if err := recover(); err != nil {
-			klog.Warnf("KITEX: panic when close client, error=%s, stack=%s", err, string(debug.Stack()))
+		if env.AllowRecover() {
+			if err := recover(); err != nil { // AllowRecover
+				klog.Warnf("KITEX: panic when close client, error=%s, stack=%s", err, string(debug.Stack()))
+			}
 		}
 	}()
 	if kc.closed {

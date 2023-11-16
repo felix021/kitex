@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/kitex/pkg/circuitbreak"
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
@@ -98,7 +99,10 @@ func (r *failureRetryer) Do(ctx context.Context, rpcCall RPCCallFunc, firstRI rp
 	var cRI rpcinfo.RPCInfo
 	cbKey, _ := r.cbContainer.cbCtl.GetKey(ctx, req)
 	defer func() {
-		if panicInfo := recover(); panicInfo != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if panicInfo := recover(); panicInfo != nil { // AllowRecover
 			err = panicToErr(ctx, panicInfo, firstRI)
 		}
 	}()

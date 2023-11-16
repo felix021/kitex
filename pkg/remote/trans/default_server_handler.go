@@ -24,6 +24,7 @@ import (
 	"runtime/debug"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/env"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -119,7 +120,10 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) (err error)
 	var sendMsg remote.Message
 	closeConnOutsideIfErr := true
 	defer func() {
-		panicErr := recover()
+		var panicErr interface{}
+		if env.AllowRecover() {
+			panicErr = recover() // AllowRecover
+		}
 		var wrapErr error
 		if panicErr != nil {
 			stack := string(debug.Stack())

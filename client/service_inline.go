@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/env"
 
 	"github.com/cloudwego/kitex/client/callopt"
 	"github.com/cloudwego/kitex/internal/client"
@@ -139,8 +140,10 @@ func (kc *serviceInlineClient) Call(ctx context.Context, method string, request,
 	ctx = kc.opt.TracerCtl.DoStart(ctx, ri)
 	var reportErr error
 	defer func() {
-		if panicInfo := recover(); panicInfo != nil {
-			reportErr = rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, true)
+		if env.AllowRecover() {
+			if panicInfo := recover(); panicInfo != nil { // AllowRecover
+				reportErr = rpcinfo.ClientPanicToErr(ctx, panicInfo, ri, true)
+			}
 		}
 		kc.opt.TracerCtl.DoFinish(ctx, ri, reportErr)
 		// If the user start a new goroutine and return before endpoint finished, it may cause panic.
@@ -268,7 +271,10 @@ func (kc *serviceInlineClient) invokeHandleEndpoint() (endpoint.Endpoint, error)
 // Close is not concurrency safe.
 func (kc *serviceInlineClient) Close() error {
 	defer func() {
-		if err := recover(); err != nil {
+		if !env.AllowRecover() {
+			return
+		}
+		if err := recover(); err != nil { // AllowRecover
 			klog.Warnf("KITEX: panic when close client, error=%s, stack=%s", err, string(debug.Stack()))
 		}
 	}()
