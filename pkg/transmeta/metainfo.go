@@ -20,6 +20,8 @@ import (
 	"context"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/remote/transmeta"
+	"github.com/cloudwego/kitex/pkg/streaming"
 
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
@@ -51,6 +53,7 @@ func (mi *metainfoClientHandler) OnConnectStream(ctx context.Context) (context.C
 			md = metadata.MD{}
 		}
 		metainfo.ToHTTPHeader(ctx, metainfo.HTTPHeader(md))
+		md.Set(transmeta.HTTPStreamLogID, streaming.GetStreamLogID(ctx))
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 	return ctx, nil
@@ -103,9 +106,20 @@ func (mi *metainfoServerHandler) OnReadStream(ctx context.Context) (context.Cont
 			ctx = metainfo.FromHTTPHeader(ctx, metainfo.HTTPHeader(mdata))
 			ctx = metainfo.WithBackwardValuesToSend(ctx)
 			ctx = metainfo.TransferForward(ctx)
+			ctx = addStreamIDToContext(ctx, mdata)
 		}
 	}
 	return ctx, nil
+}
+
+func addStreamIDToContext(ctx context.Context, md metadata.MD) context.Context {
+	streamLogIDValues := md.Get(transmeta.HTTPStreamLogID)
+	if len(streamLogIDValues) == 0 {
+		// the caller has not set the stream log id, so generate a new one
+		logID := streaming.GenerateStreamLogID(ctx)
+		return streaming.NewCtxWithStreamLogID(ctx, logID)
+	}
+	return streaming.NewCtxWithStreamLogID(ctx, streamLogIDValues[0])
 }
 
 func (mi *metainfoServerHandler) WriteMeta(ctx context.Context, sendMsg remote.Message) (context.Context, error) {

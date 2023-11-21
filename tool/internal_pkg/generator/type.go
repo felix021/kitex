@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudwego/kitex/tool/internal_pkg/util"
 	"github.com/cloudwego/kitex/transport"
+	"github.com/cloudwego/thriftgo/generator/golang/streaming"
 )
 
 // File .
@@ -121,6 +122,7 @@ type MethodInfo struct {
 	Oneway                 bool
 	Void                   bool
 	Args                   []*Parameter
+	ArgsLength             int
 	Resp                   *Parameter
 	Exceptions             []*Parameter
 	ArgStructName          string
@@ -129,6 +131,7 @@ type MethodInfo struct {
 	GenArgResultStruct     bool
 	ClientStreaming        bool
 	ServerStreaming        bool
+	Streaming              *streaming.Streaming
 }
 
 // Parameter .
@@ -153,6 +156,7 @@ var funcs = map[string]interface{}{
 
 var templateNames = []string{
 	"@client.go-NewClient-option",
+	"@client.go-NewStreamClient-option",
 	"@client.go-EOF",
 	"@server.go-NewServer-option",
 	"@server.go-EOF",

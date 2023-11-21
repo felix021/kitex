@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
-package transmeta
+package streaming
 
-// key of http transit info
-const (
-	HTTPDestService   = "destination-service"
-	HTTPDestAddr      = "destination-addr"
-	HTTPSourceService = "source-service"
+import "github.com/cloudwego/kitex/pkg/serviceinfo"
 
-	// supply metadata
-	HTTPDestMethod   = "destination-method"
-	HTTPSourceMethod = "source-method"
+// KitexUnusedProtection may be anonymously referenced in another package to avoid build error
+const KitexUnusedProtection = 0
 
-	HTTPStreamLogID = "stream-log-id"
-)
+// UnaryCompatibleMiddleware returns whether to use compatible middleware for unary.
+func UnaryCompatibleMiddleware(mode serviceinfo.StreamingMode, allow bool) bool {
+	return allow && mode == serviceinfo.StreamingUnary
+}

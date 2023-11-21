@@ -41,7 +41,7 @@ func (f *cliTransHandlerFactory) NewTransHandler(opt *remote.ClientOption) (remo
 func newCliTransHandler(opt *remote.ClientOption) (*cliTransHandler, error) {
 	return &cliTransHandler{
 		opt:   opt,
-		codec: protobuf.NewGRPCCodec(),
+		codec: protobuf.NewGRPCCodec(protobuf.WithThriftCodec(opt.PayloadCodec)),
 	}, nil
 }
 
