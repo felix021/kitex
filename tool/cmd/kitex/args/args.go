@@ -21,8 +21,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/tool/internal_pkg/generator"
 	"github.com/cloudwego/kitex/tool/internal_pkg/log"
 	"github.com/cloudwego/kitex/tool/internal_pkg/pluginmode/protoc"
@@ -304,6 +307,8 @@ func (a *Arguments) BuildCmd(out io.Writer) *exec.Cmd {
 		Stderr: io.MultiWriter(out, os.Stderr),
 	}
 
+	ValidateCMD(cmd.Path, a.IDLType)
+
 	if a.IDLType == "thrift" {
 		os.Setenv(EnvPluginMode, thriftgo.PluginName)
 		cmd.Args = append(cmd.Args, "thriftgo")
@@ -376,6 +381,88 @@ func (a *Arguments) BuildCmd(out io.Writer) *exec.Cmd {
 	return cmd
 }
 
+var requiredThriftGoVersion = "v0.3.5"
+
+func ValidateCMD(path string, idlType string) {
+	// check if the path exists
+	if _, err := os.Stat(path); err != nil {
+		tool := "thriftgo"
+		if idlType == "protobuf" {
+			tool = "protoc"
+		}
+		log.Warnf("[ERROR] %s is also unavailable, please install %s first.\n", path, tool)
+		if idlType == "thrift" {
+			log.Warn("Refer to https://github.com/cloudwego/thriftgo, or simple run:\n")
+			log.Warn("  go install -v github.com/cloudwego/thriftgo@latest\n")
+		} else {
+			log.Warn("Refer to https://github.com/protocolbuffers/protobuf\n")
+		}
+		os.Exit(1)
+	}
+
+	// check if the version is satisfied
+	if idlType == "thrift" {
+		// run `thriftgo -versions and get the output
+		cmd := exec.Command(path, "-version")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Warnf("Failed to get thriftgo version: %s\n", err.Error())
+			os.Exit(1)
+		}
+		if !strings.HasPrefix(string(out), "thriftgo ") {
+			log.Warnf("thriftgo -version returns '%s', please reinstall thriftgo first.\n", string(out))
+			os.Exit(1)
+		}
+		version := strings.Replace(string(out), "thriftgo ", "", 1)
+		if !versionSatisfied(version, requiredThriftGoVersion) {
+			log.Warnf("[ERROR] thriftgo version not satisfied, please install version >= %s\n", requiredThriftGoVersion)
+			os.Exit(1)
+		}
+		return
+	}
+}
+
+var versionSuffixPattern = regexp.MustCompile(`-.*$`)
+
+func removeVersionPrefixAndSuffix(version string) string {
+	version = strings.TrimPrefix(version, "v")
+	version = strings.TrimSuffix(version, "\n")
+	version = versionSuffixPattern.ReplaceAllString(version, "")
+	return version
+}
+
+func versionSatisfied(current string, required string) bool {
+	currentSegments := strings.SplitN(removeVersionPrefixAndSuffix(current), ".", 3)
+	requiredSegments := strings.SplitN(removeVersionPrefixAndSuffix(required), ".", 3)
+
+	requiredHasSuffix := versionSuffixPattern.MatchString(required)
+	if requiredHasSuffix {
+		return false // required version should be a formal version
+	}
+
+	for i := 0; i < 3; i++ {
+		var currentSeg, minimalSeg int
+		var err error
+		if currentSeg, err = strconv.Atoi(currentSegments[i]); err != nil {
+			klog.Warnf("invalid current version: %s, seg=%v, err=%v", current, currentSegments[i], err)
+			return false
+		}
+		if minimalSeg, err = strconv.Atoi(requiredSegments[i]); err != nil {
+			klog.Warnf("invalid required version: %s, seg=%v, err=%v", required, requiredSegments[i], err)
+			return false
+		}
+		if currentSeg > minimalSeg {
+			return true
+		} else if currentSeg < minimalSeg {
+			return false
+		}
+	}
+	if currentHasSuffix := versionSuffixPattern.MatchString(current); currentHasSuffix {
+		return false
+	}
+	return true
+}
+
 func lookupTool(idlType string) string {
 	tool := "thriftgo"
 	if idlType == "protobuf" {
@@ -384,7 +471,7 @@ func lookupTool(idlType string) string {
 
 	path, err := exec.LookPath(tool)
 	if err != nil {
-		log.Warnf("Failed to find %q from $PATH: %s. Try $GOPATH/bin/%s instead\n", path, err.Error(), tool)
+		log.Warnf("Failed to find %q from $PATH: %s.\nTry $GOPATH/bin/%s instead\n", path, err.Error(), tool)
 		path = util.JoinPath(util.GetGOPATH(), "bin", tool)
 	}
 	return path

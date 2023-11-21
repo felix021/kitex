@@ -20,6 +20,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/cloudwego/thriftgo/parser"
+
 	"github.com/cloudwego/kitex/tool/internal_pkg/util"
 	"github.com/cloudwego/kitex/transport"
 )
@@ -121,6 +123,7 @@ type MethodInfo struct {
 	Oneway                 bool
 	Void                   bool
 	Args                   []*Parameter
+	ArgsLength             int
 	Resp                   *Parameter
 	Exceptions             []*Parameter
 	ArgStructName          string
@@ -129,6 +132,29 @@ type MethodInfo struct {
 	GenArgResultStruct     bool
 	ClientStreaming        bool
 	ServerStreaming        bool
+	Streaming              *parser.Streaming
+}
+
+// BuildStreaming builds protobuf MethodInfo.Streaming as for Thrift, to simplify codegen
+func (mi *MethodInfo) BuildStreaming(serviceHasStreaming bool) {
+	s := &parser.Streaming{
+		IsStreaming: serviceHasStreaming,
+	}
+	if mi.ClientStreaming && mi.ServerStreaming {
+		s.Mode = parser.StreamingBidirectional
+		s.BidirectionalStreaming = true
+		s.ClientStreaming = true
+		s.ServerStreaming = true
+	} else if mi.ClientStreaming && !mi.ServerStreaming {
+		s.Mode = parser.StreamingClientSide
+		s.ClientStreaming = true
+	} else if !mi.ClientStreaming && mi.ServerStreaming {
+		s.Mode = parser.StreamingServerSide
+		s.ServerStreaming = true
+	} else if serviceHasStreaming {
+		s.Mode = parser.StreamingUnary
+	}
+	mi.Streaming = s
 }
 
 // Parameter .
@@ -153,6 +179,7 @@ var funcs = map[string]interface{}{
 
 var templateNames = []string{
 	"@client.go-NewClient-option",
+	"@client.go-NewStreamClient-option",
 	"@client.go-EOF",
 	"@server.go-NewServer-option",
 	"@server.go-EOF",

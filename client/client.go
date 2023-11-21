@@ -130,6 +130,7 @@ func (kc *kClient) init() (err error) {
 	}
 	ctx := kc.initContext()
 	kc.initMiddlewares(ctx)
+	kc.initStreamMiddlewares(ctx)
 	kc.initDebugService()
 	kc.richRemoteOption()
 	if err = kc.buildInvokeChain(); err != nil {
@@ -292,6 +293,11 @@ func (kc *kClient) initMiddlewares(ctx context.Context) {
 		kc.mws = append(kc.mws, newProxyMW(kc.opt.Proxy))
 	}
 	kc.mws = append(kc.mws, newIOErrorHandleMW(kc.opt.ErrHandle))
+}
+
+func (kc *kClient) initStreamMiddlewares(ctx context.Context) {
+	// TODO: governance(e.g. timeout) & observation(e.g. trace) middlewares
+	kc.opt.Streaming.InitMiddlewares(ctx)
 }
 
 func richMWsWithBuilder(ctx context.Context, mwBs []endpoint.MiddlewareBuilder) (mws []endpoint.Middleware) {

@@ -19,6 +19,7 @@ package protobuf
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/bytedance/gopkg/lang/mcache"
@@ -26,9 +27,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/cloudwego/kitex/pkg/remote"
+	"github.com/cloudwego/kitex/pkg/remote/codec/thrift"
 )
 
 const dataFrameHeaderLen = 5
+
+var ErrInvalidPayload = errors.New("grpc invalid payload")
 
 // gogoproto generate
 type marshaler interface {
@@ -41,11 +45,28 @@ type protobufV2MsgCodec interface {
 	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 }
 
-type grpcCodec struct{}
+type grpcCodec struct {
+	ThriftCodec remote.PayloadCodec
+}
+
+type CodecOption func(c *grpcCodec)
+
+func WithThriftCodec(t remote.PayloadCodec) CodecOption {
+	return func(c *grpcCodec) {
+		c.ThriftCodec = t
+	}
+}
 
 // NewGRPCCodec create grpc and protobuf codec
-func NewGRPCCodec() remote.Codec {
-	return new(grpcCodec)
+func NewGRPCCodec(opts ...CodecOption) remote.Codec {
+	codec := &grpcCodec{}
+	for _, opt := range opts {
+		opt(codec)
+	}
+	if !thrift.IsThriftCodec(codec.ThriftCodec) {
+		codec.ThriftCodec = thrift.NewThriftCodec()
+	}
+	return codec
 }
 
 func mallocWithFirstByteZeroed(size int) []byte {
@@ -97,6 +118,12 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 		payload, err = proto.Marshal(t)
 	case protobufMsgCodec:
 		payload, err = t.Marshal(nil)
+	default:
+		// may be thrift
+		payload, err = thrift.MarshalThriftData(ctx, c.ThriftCodec, message.Data())
+		if err != nil {
+			return err
+		}
 	}
 	if err != nil {
 		return err
@@ -117,6 +144,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 		return err
 	}
 	return writer.WriteData(payload)
+	// TODO: recycle payload?
 }
 
 func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remote.ByteBuffer) (err error) {
@@ -144,8 +172,10 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 		return proto.Unmarshal(d, t)
 	case protobufMsgCodec:
 		return t.Unmarshal(d)
+	default:
+		// may be thrift
+		return thrift.UnmarshalThriftData(ctx, c.ThriftCodec, d, message.Data())
 	}
-	return nil
 }
 
 func (c *grpcCodec) Name() string {

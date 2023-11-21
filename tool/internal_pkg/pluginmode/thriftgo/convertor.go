@@ -155,6 +155,7 @@ func (c *converter) copyFunctionWithRef(f *parser.Function, ref string) *parser.
 		Oneway:       f.Oneway,
 		Void:         f.Void,
 		FunctionType: c.copyTypeWithRef(f.FunctionType, ref),
+		Streaming:    f.Streaming,
 	}
 	for _, x := range f.Arguments {
 		y := *x
@@ -324,10 +325,10 @@ func (c *converter) convertTypes(req *plugin.Request) error {
 		}
 		for _, svc := range scope.Services() {
 			si, err := c.makeService(pi, svc)
-			si.ServiceFilePath = ast.Filename
 			if err != nil {
 				return fmt.Errorf("%s: makeService '%s': %w", ast.Filename, svc.Name, err)
 			}
+			si.ServiceFilePath = ast.Filename
 			all[ast.Filename] = append(all[ast.Filename], si)
 			c.svc2ast[si] = ast
 		}
@@ -430,6 +431,13 @@ func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*
 		Void:               f.Void,
 		ArgStructName:      f.ArgType().GoName().String(),
 		GenArgResultStruct: false,
+		Streaming:          f.Streaming,
+		ClientStreaming:    f.Streaming.ClientStreaming,
+		ServerStreaming:    f.Streaming.ServerStreaming,
+		ArgsLength:         len(f.Arguments()),
+	}
+	if f.Streaming.IsStreaming {
+		si.HasStreaming = true
 	}
 
 	if !f.Oneway {

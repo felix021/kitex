@@ -163,7 +163,7 @@ func (pp *protocPlugin) GenerateFile(gen *protogen.Plugin, file *protogen.File) 
 		f.QualifiedGoIdent(protogen.GoIdent{GoImportPath: "context"})
 		if hasStreaming {
 			f.QualifiedGoIdent(protogen.GoIdent{
-				GoImportPath: protogen.GoImportPath(generator.ImportPathTo("pkg/streaming")),
+				GoImportPath: "github.com/cloudwego/kitex/pkg/streaming",
 			})
 		}
 		f.P("var _ context.Context")
@@ -285,6 +285,9 @@ func (pp *protocPlugin) convertTypes(file *protogen.File) (ss []*generator.Servi
 			if !si.HasStreaming && (mi.ClientStreaming || mi.ServerStreaming) {
 				si.HasStreaming = true
 			}
+		}
+		for _, m := range si.Methods {
+			m.BuildStreaming(si.HasStreaming)
 		}
 		ss = append(ss, si)
 	}
