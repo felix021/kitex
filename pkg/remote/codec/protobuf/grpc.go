@@ -19,6 +19,7 @@ package protobuf
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/bytedance/gopkg/lang/mcache"
@@ -26,9 +27,13 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/cloudwego/kitex/pkg/remote"
+	"github.com/cloudwego/kitex/pkg/remote/codec/thrift"
+	"github.com/cloudwego/kitex/pkg/serviceinfo"
 )
 
 const dataFrameHeaderLen = 5
+
+var ErrInvalidPayload = errors.New("grpc invalid payload")
 
 // gogoproto generate
 type marshaler interface {
@@ -41,11 +46,28 @@ type protobufV2MsgCodec interface {
 	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 }
 
-type grpcCodec struct{}
+type grpcCodec struct {
+	ThriftCodec remote.PayloadCodec
+}
+
+type CodecOption func(c *grpcCodec)
+
+func WithThriftCodec(t remote.PayloadCodec) CodecOption {
+	return func(c *grpcCodec) {
+		c.ThriftCodec = t
+	}
+}
 
 // NewGRPCCodec create grpc and protobuf codec
-func NewGRPCCodec() remote.Codec {
-	return new(grpcCodec)
+func NewGRPCCodec(opts ...CodecOption) remote.Codec {
+	codec := &grpcCodec{}
+	for _, opt := range opts {
+		opt(codec)
+	}
+	if !thrift.IsThriftCodec(codec.ThriftCodec) {
+		codec.ThriftCodec = thrift.NewThriftCodec()
+	}
+	return codec
 }
 
 func mallocWithFirstByteZeroed(size int) []byte {
@@ -66,38 +88,48 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 	isCompressed := compressor != nil
 
 	var payload []byte
-	switch t := message.Data().(type) {
-	case fastpb.Writer:
-		size := t.Size()
-		if !isCompressed {
-			payload = mallocWithFirstByteZeroed(size + dataFrameHeaderLen)
-			t.FastWrite(payload[dataFrameHeaderLen:])
-			binary.BigEndian.PutUint32(payload[1:dataFrameHeaderLen], uint32(size))
-			return writer.WriteData(payload)
-		}
-		payload = mcache.Malloc(size)
-		t.FastWrite(payload)
-	case marshaler:
-		size := t.Size()
-		if !isCompressed {
-			payload = mallocWithFirstByteZeroed(size + dataFrameHeaderLen)
-			if _, err = t.MarshalTo(payload[dataFrameHeaderLen:]); err != nil {
+	switch message.ProtocolInfo().CodecType {
+	case serviceinfo.Thrift:
+		payload, err = thrift.MarshalThriftData(ctx, c.ThriftCodec, message.Data())
+	case serviceinfo.Protobuf:
+		switch t := message.Data().(type) {
+		case fastpb.Writer:
+			size := t.Size()
+			if !isCompressed {
+				payload = mallocWithFirstByteZeroed(size + dataFrameHeaderLen)
+				t.FastWrite(payload[dataFrameHeaderLen:])
+				binary.BigEndian.PutUint32(payload[1:dataFrameHeaderLen], uint32(size))
+				return writer.WriteData(payload)
+			}
+			payload = mcache.Malloc(size)
+			t.FastWrite(payload)
+		case marshaler:
+			size := t.Size()
+			if !isCompressed {
+				payload = mallocWithFirstByteZeroed(size + dataFrameHeaderLen)
+				if _, err = t.MarshalTo(payload[dataFrameHeaderLen:]); err != nil {
+					return err
+				}
+				binary.BigEndian.PutUint32(payload[1:dataFrameHeaderLen], uint32(size))
+				return writer.WriteData(payload)
+			}
+			payload = mcache.Malloc(size)
+			if _, err = t.MarshalTo(payload); err != nil {
 				return err
 			}
-			binary.BigEndian.PutUint32(payload[1:dataFrameHeaderLen], uint32(size))
-			return writer.WriteData(payload)
+		case protobufV2MsgCodec:
+			payload, err = t.XXX_Marshal(nil, true)
+		case proto.Message:
+			payload, err = proto.Marshal(t)
+		case protobufMsgCodec:
+			payload, err = t.Marshal(nil)
+		default:
+			return ErrInvalidPayload
 		}
-		payload = mcache.Malloc(size)
-		if _, err = t.MarshalTo(payload); err != nil {
-			return err
-		}
-	case protobufV2MsgCodec:
-		payload, err = t.XXX_Marshal(nil, true)
-	case proto.Message:
-		payload, err = proto.Marshal(t)
-	case protobufMsgCodec:
-		payload, err = t.Marshal(nil)
+	default:
+		return ErrInvalidPayload
 	}
+
 	if err != nil {
 		return err
 	}
@@ -117,6 +149,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 		return err
 	}
 	return writer.WriteData(payload)
+	// TODO: recycle payload?
 }
 
 func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remote.ByteBuffer) (err error) {
@@ -126,26 +159,34 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 	}
 	message.SetPayloadLen(len(d))
 	data := message.Data()
-	if t, ok := data.(fastpb.Reader); ok {
-		if len(d) == 0 {
-			// if all fields of a struct is default value, data will be nil
-			// In the implementation of fastpb, if data is nil, then fastpb will skip creating this struct, as a result user will get a nil pointer which is not expected.
-			// So, when data is nil, use default protobuf unmarshal method to decode the struct.
-			// todo: fix fastpb
-		} else {
-			_, err = fastpb.ReadMessage(d, fastpb.SkipTypeCheck, t)
-			return err
+	switch message.ProtocolInfo().CodecType {
+	case serviceinfo.Thrift:
+		return thrift.UnmarshalThriftData(ctx, c.ThriftCodec, d, message.Data())
+	case serviceinfo.Protobuf:
+		if t, ok := data.(fastpb.Reader); ok {
+			if len(d) == 0 {
+				// if all fields of a struct is default value, data will be nil
+				// In the implementation of fastpb, if data is nil, then fastpb will skip creating this struct, as a result user will get a nil pointer which is not expected.
+				// So, when data is nil, use default protobuf unmarshal method to decode the struct.
+				// todo: fix fastpb
+			} else {
+				_, err = fastpb.ReadMessage(d, fastpb.SkipTypeCheck, t)
+				return err
+			}
 		}
+		switch t := data.(type) {
+		case protobufV2MsgCodec:
+			return t.XXX_Unmarshal(d)
+		case proto.Message:
+			return proto.Unmarshal(d, t)
+		case protobufMsgCodec:
+			return t.Unmarshal(d)
+		default:
+			return ErrInvalidPayload
+		}
+	default:
+		return ErrInvalidPayload
 	}
-	switch t := data.(type) {
-	case protobufV2MsgCodec:
-		return t.XXX_Unmarshal(d)
-	case proto.Message:
-		return proto.Unmarshal(d, t)
-	case protobufMsgCodec:
-		return t.Unmarshal(d)
-	}
-	return nil
 }
 
 func (c *grpcCodec) Name() string {
