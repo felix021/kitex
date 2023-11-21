@@ -137,8 +137,9 @@ func (c *converter) copyTreeWithRef(ast *parser.Thrift, ref string) *parser.Thri
 
 	for _, s := range ast.Services {
 		ss := &parser.Service{
-			Name:    s.Name,
-			Extends: s.Extends,
+			Name:         s.Name,
+			Extends:      s.Extends,
+			HasStreaming: s.HasStreaming,
 		}
 		for _, f := range s.Functions {
 			ff := c.copyFunctionWithRef(f, ref)
@@ -151,10 +152,12 @@ func (c *converter) copyTreeWithRef(ast *parser.Thrift, ref string) *parser.Thri
 
 func (c *converter) copyFunctionWithRef(f *parser.Function, ref string) *parser.Function {
 	ff := &parser.Function{
-		Name:         f.Name,
-		Oneway:       f.Oneway,
-		Void:         f.Void,
-		FunctionType: c.copyTypeWithRef(f.FunctionType, ref),
+		Name:            f.Name,
+		Oneway:          f.Oneway,
+		Void:            f.Void,
+		FunctionType:    c.copyTypeWithRef(f.FunctionType, ref),
+		ClientStreaming: f.ClientStreaming,
+		ServerStreaming: f.ServerStreaming,
 	}
 	for _, x := range f.Arguments {
 		y := *x
@@ -324,10 +327,10 @@ func (c *converter) convertTypes(req *plugin.Request) error {
 		}
 		for _, svc := range scope.Services() {
 			si, err := c.makeService(pi, svc)
-			si.ServiceFilePath = ast.Filename
 			if err != nil {
 				return fmt.Errorf("%s: makeService '%s': %w", ast.Filename, svc.Name, err)
 			}
+			si.ServiceFilePath = ast.Filename
 			all[ast.Filename] = append(all[ast.Filename], si)
 			c.svc2ast[si] = ast
 		}
@@ -399,12 +402,16 @@ func (c *converter) makeService(pkg generator.PkgInfo, svc *golang.Service) (*ge
 		PkgInfo:        pkg,
 		ServiceName:    svc.GoName().String(),
 		RawServiceName: svc.Name,
+		HasStreaming:   svc.HasStreaming,
 	}
 	si.ServiceTypeName = func() string { return si.PkgRefName + "." + si.ServiceName }
 
 	for _, f := range svc.Functions() {
 		if strings.HasPrefix(f.Name, "_") {
 			continue
+		}
+		if (f.ClientStreaming || f.ServerStreaming) && len(f.Arguments()) != 1 {
+			return nil, fmt.Errorf("streaming function %s.%s should have exactly 1 argument", svc.Name, f.Name)
 		}
 		mi, err := c.makeMethod(si, f)
 		if err != nil {
@@ -430,6 +437,8 @@ func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*
 		Void:               f.Void,
 		ArgStructName:      f.ArgType().GoName().String(),
 		GenArgResultStruct: false,
+		ClientStreaming:    f.ClientStreaming,
+		ServerStreaming:    f.ServerStreaming,
 	}
 
 	if !f.Oneway {

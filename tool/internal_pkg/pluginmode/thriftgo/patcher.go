@@ -133,7 +133,9 @@ func (p *patcher) buildTemplates() (err error) {
 			structLikeCodec,
 			structLikeProtocol,
 			javaClassName,
-			processor)
+			processor,
+			streamingInterfaceTemplate,
+		)
 	} else {
 		allTemplates = append(allTemplates, structLikeCodec,
 			structLikeFastRead,
@@ -181,6 +183,7 @@ func (p *patcher) buildTemplates() (err error) {
 			templates.FieldDeepEqualContainer,
 			validateSet,
 			processor,
+			streamingInterfaceTemplate,
 		)
 	}
 	for _, txt := range allTemplates {
@@ -256,6 +259,15 @@ func (p *patcher) patch(req *plugin.Request) (patches []*plugin.Generated, err e
 
 			patches = append(patches, patch)
 			protection[register] = patch
+		}
+
+		if ast.HasStreaming {
+			patch, err := p.patchStreaming(path, scope, pkgName, base)
+			if err != nil {
+				return nil, fmt.Errorf("patch stream fail for %q: %w", ast.Filename, err)
+			}
+			patches = append(patches, patch)
+			protection[*patch.Name] = patch
 		}
 
 		data := &struct {
@@ -429,6 +441,24 @@ func (p *patcher) isBinaryOrStringType(t *parser.Type) bool {
 
 func (p *patcher) IsHessian2() bool {
 	return strings.EqualFold(p.protocol, "hessian2")
+}
+
+func (p *patcher) patchStreaming(path string, scope *golang.Scope, pkgName, base string) (patch *plugin.Generated, err error) {
+	buf := strings.Builder{}
+	data := &streamingInterfaceTemplateData{
+		Version:  p.version,
+		PkgName:  pkgName,
+		Services: scope.AST().Services,
+	}
+	if err = p.fileTpl.ExecuteTemplate(&buf, "streaming", data); err != nil {
+		return nil, err
+	}
+	streamingFile := util.JoinPath(path, fmt.Sprintf("streaming-%s", base))
+	patch = &plugin.Generated{
+		Content: buf.String(),
+		Name:    &streamingFile,
+	}
+	return patch, nil
 }
 
 var typeIDToGoType = map[string]string{

@@ -31,6 +31,8 @@ import (
 	{{- end}}
 )
 
+var errInvalidMessageType = errors.New("invalid message type")
+
 {{- if gt (len .CombineServices) 0}}
 type {{call .ServiceTypeName}} interface {
 {{- range .CombineServices}}
@@ -87,8 +89,8 @@ func NewServiceInfo() *kitex.ServiceInfo {
 {{- $serverSide := and (not .ClientStreaming) .ServerStreaming}}
 {{- $bidiSide := and .ClientStreaming .ServerStreaming}}
 {{- $arg := "" }}
-{{- if eq $.Codec "protobuf" }}
-{{- $arg = index .Args 0}}
+{{- if or (eq $.Codec "protobuf") ($isStreaming) }}
+{{- $arg = index .Args 0}}{{/* streaming api only supports exactly one argument */}}
 {{- end}}
 
 func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, result interface{}) error {
@@ -105,9 +107,7 @@ func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, 
 		if err != nil {
 			return err
 		}
-		if err := st.SendMsg(resp); err != nil {
-			return err
-		}
+		return st.SendMsg(resp)
 	case *{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ArgStructName}}:
 		success, err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, s.{{.Name}}{{end}})
 		if err != nil {
@@ -115,8 +115,10 @@ func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, 
 		}
 		realResult := result.(*{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ResStructName}})
 		realResult.Success = {{if .IsResponseNeedRedirect}}&{{end}}success
+		return nil
+	default:
+		return errInvalidMessageType
 	}
-	return nil
 	{{- else}}{{/* streaming logic */}}
 		st := arg.(*streaming.Args).Stream
 		stream := &{{LowerFirst .ServiceName}}{{.RawName}}Server{st}
@@ -129,34 +131,67 @@ func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, 
 		return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}({{if $serverSide}}req, {{end}}stream)
 	{{- end}} {{/* $unary end */}}
 	{{- else}} {{/* thrift logic */}}
-	{{if .Args}}realArg := arg.(*{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ArgStructName}}){{end}}
-	{{if or (not .Void) .Exceptions}}realResult := result.(*{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ResStructName}}){{end}}
-	{{if .Void}}err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, realArg.{{.Name}}{{end}})
-	{{else}}success, err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, realArg.{{.Name}}{{end}})
-	{{end -}}
-	if err != nil {
-	{{- if $HandlerReturnKeepResp }}
-		// still keep resp when err is not nil
-		// NOTE: use "-handler-return-keep-resp" to generate this
-		{{if not .Void}}realResult.Success = {{if .IsResponseNeedRedirect}}&{{end}}success{{- end}}
-	{{- end }}
-	{{if .Exceptions -}}
-		switch v := err.(type) {
-		{{range .Exceptions -}}
-		case {{.Type}}:
-			realResult.{{.Name}} = v
-		{{end -}}
-		default:
+	{{- if $unary}} {{/* unary logic */}}
+	switch s := arg.(type) {
+	case *streaming.Args:
+		st := s.Stream
+		realArg := new({{.PkgRefName}}.{{.ArgStructName}})
+		if err := st.RecvMsg(realArg); err != nil {
 			return err
 		}
-	} else {
-	{{else -}}
+		success, err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, realArg.{{.Name}}{{end}})
+		if err != nil {
+			return err
+		}
+		realResult := new({{.PkgRefName}}.{{.ResStructName}})
+		realResult.Success = success
+		return st.SendMsg(realResult)
+	case *{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ArgStructName}}:
+		{{if .Args}}realArg := arg.(*{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ArgStructName}}){{end}}
+		{{if or (not .Void) .Exceptions}}realResult := result.(*{{if not .GenArgResultStruct}}{{.PkgRefName}}.{{end}}{{.ResStructName}}){{end}}
+		{{if .Void}}err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, realArg.{{.Name}}{{end}})
+		{{else}}success, err := handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(ctx{{range .Args}}, realArg.{{.Name}}{{end}})
+		{{end -}}
+		if err != nil {
+		{{- if $HandlerReturnKeepResp }}
+			// still keep resp when err is not nil
+			// NOTE: use "-handler-return-keep-resp" to generate this
+			{{if not .Void}}realResult.Success = {{if .IsResponseNeedRedirect}}&{{end}}success{{- end}}
+		{{- end }}
+		{{if .Exceptions -}}
+			switch v := err.(type) {
+			{{range .Exceptions -}}
+			case {{.Type}}:
+				realResult.{{.Name}} = v
+			{{end -}}
+			default:
+				return err
+			}
+		} else {
+		{{else -}}
+			return err
+		}
+		{{end -}}
+		{{if not .Void}}realResult.Success = {{if .IsResponseNeedRedirect}}&{{end}}success{{end}}
+		{{- if .Exceptions}}}{{end}}
+		return nil
+	default:
+		return errInvalidMessageType
+	}
+	{{- else}} {{/* $isStreaming */}}
+	st := arg.(*streaming.Args).Stream
+	stream := &{{LowerFirst .ServiceName}}{{.Name}}Server{st}
+		{{- if not $serverSide}}
+	return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(stream)
+		{{- else}} {{/* !$serverSide */}}
+		{{- $RequestType := $arg.Type}}
+	req := new({{NotPtr $RequestType}})
+	if err := st.RecvMsg(req); err != nil {
 		return err
 	}
-	{{end -}}
-	{{if not .Void}}realResult.Success = {{if .IsResponseNeedRedirect}}&{{end}}success{{end}}
-	{{- if .Exceptions}}}{{end}}
-	return nil
+	return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(req, stream)
+		{{- end}} {{/* $serverSide end*/}}
+	{{- end}} {{/* thrift end */}}
 	{{- end}} {{/* protobuf end */}}
 }
 
@@ -375,7 +410,8 @@ func (p *kClient) {{.Name}}(ctx context.Context{{if not .ClientStreaming}}{{rang
 	}
 	stream := &{{LowerFirst .ServiceName}}{{.RawName}}Client{res.Stream}
 	{{if not .ClientStreaming -}}
-	if err := stream.Stream.SendMsg(req); err != nil {
+	{{$arg := index .Args 0}}
+	if err := stream.Stream.SendMsg({{LowerFirst $arg.Name}}); err != nil {
 		return nil, err
 	}
 	if err := stream.Stream.Close(); err != nil {

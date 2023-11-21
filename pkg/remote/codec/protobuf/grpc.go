@@ -19,16 +19,20 @@ package protobuf
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/cloudwego/fastpb"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/cloudwego/kitex/pkg/remote"
+	kthrift "github.com/cloudwego/kitex/pkg/remote/codec/thrift"
+	"google.golang.org/protobuf/proto"
 )
 
 const dataFrameHeaderLen = 5
+
+var ErrInvalidPayload = errors.New("grpc invalid payload")
 
 // gogoproto generate
 type marshaler interface {
@@ -97,6 +101,13 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 		payload, err = proto.Marshal(t)
 	case protobufMsgCodec:
 		payload, err = t.Marshal(nil)
+	case kthrift.MessageWriter, kthrift.MessageWriterWithContext:
+		transport := thrift.NewTMemoryBufferLen(1024)
+		tProt := thrift.NewTBinaryProtocol(transport, true, true)
+		err = kthrift.EncodeNormalThriftBody(ctx, tProt, message.Data())
+		payload = transport.Bytes()
+	default:
+		err = ErrInvalidPayload
 	}
 	if err != nil {
 		return err
@@ -144,8 +155,15 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 		return proto.Unmarshal(d, t)
 	case protobufMsgCodec:
 		return t.Unmarshal(d)
+	case kthrift.MessageReader, kthrift.MessageReaderWithMethodWithContext:
+		tProt := kthrift.NewBinaryProtocol(remote.NewReaderBuffer(d))
+		if err = kthrift.DecodeNormalThriftBody(ctx, message.Data(), tProt, ""); err == nil {
+			tProt.Recycle()
+		}
+		return err
+	default:
+		return ErrInvalidPayload
 	}
-	return nil
 }
 
 func (c *grpcCodec) Name() string {

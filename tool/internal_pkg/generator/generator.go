@@ -510,6 +510,7 @@ func (g *generator) setImports(name string, pkg *PackageInfo) {
 		}
 		pkg.AddImports("server")
 	case ServiceFileName:
+		pkg.AddImports("errors")
 		pkg.AddImports("client")
 		pkg.AddImport("kitex", ImportPathTo("pkg/serviceinfo"))
 		pkg.AddImport(pkg.ServiceInfo.PkgRefName, pkg.ServiceInfo.ImportPath)
@@ -531,9 +532,7 @@ func (g *generator) setImports(name string, pkg *PackageInfo) {
 					pkg.AddImport(dep.PkgRefName, dep.ImportPath)
 				}
 			}
-			if pkg.Codec == "protobuf" {
-				pkg.AddImport("streaming", ImportPathTo("pkg/streaming"))
-			}
+			pkg.AddImport("streaming", ImportPathTo("pkg/streaming"))
 			if !m.Void && m.Resp != nil {
 				for _, dep := range m.Resp.Deps {
 					pkg.AddImport(dep.PkgRefName, dep.ImportPath)

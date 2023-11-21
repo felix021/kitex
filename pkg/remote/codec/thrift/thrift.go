@@ -109,11 +109,28 @@ func (c thriftCodec) Marshal(ctx context.Context, message remote.Message, out re
 		}
 	}
 
-	// encode with normal way
+	return EncodeNormalThrift(out, ctx, methodName, msgType, seqID, data)
+}
+
+// EncodeNormalThrift encode with normal way
+func EncodeNormalThrift(out remote.ByteBuffer, ctx context.Context,
+	method string, msgType remote.MessageType, seqID int32, data interface{}) error {
 	tProt := NewBinaryProtocol(out)
-	if err := tProt.WriteMessageBegin(methodName, thrift.TMessageType(msgType), seqID); err != nil {
+	if err := tProt.WriteMessageBegin(method, thrift.TMessageType(msgType), seqID); err != nil {
 		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("thrift marshal, WriteMessageBegin failed: %s", err.Error()))
 	}
+	if err := EncodeNormalThriftBody(ctx, tProt, data); err != nil {
+		return err
+	}
+	if err := tProt.WriteMessageEnd(); err != nil {
+		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("thrift marshal, WriteMessageEnd failed: %s", err.Error()))
+	}
+	tProt.Recycle()
+	return nil
+}
+
+// EncodeNormalThriftBody only encodes the data (not prepending method, msgType, seqId)
+func EncodeNormalThriftBody(ctx context.Context, tProt thrift.TProtocol, data interface{}) error {
 	switch msg := data.(type) {
 	case MessageWriter:
 		if err := msg.Write(tProt); err != nil {
@@ -126,10 +143,6 @@ func (c thriftCodec) Marshal(ctx context.Context, message remote.Message, out re
 	default:
 		return remote.NewTransErrorWithMsg(remote.InvalidProtocol, "encode failed, codec msg type not match with thriftCodec")
 	}
-	if err := tProt.WriteMessageEnd(); err != nil {
-		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("thrift marshal, WriteMessageEnd failed: %s", err.Error()))
-	}
-	tProt.Recycle()
 	return nil
 }
 
@@ -216,7 +229,17 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 		}
 	}
 
-	// decode with normal way
+	if err = DecodeNormalThriftBody(ctx, data, tProt, methodName); err != nil {
+		return err
+	}
+	tProt.ReadMessageEnd()
+	tProt.Recycle()
+	return err
+}
+
+// DecodeNormalThriftBody decode thrift body the normal way
+func DecodeNormalThriftBody(ctx context.Context, data interface{}, tProt thrift.TProtocol, methodName string) error {
+	var err error
 	switch t := data.(type) {
 	case MessageReader:
 		if err = t.Read(tProt); err != nil {
@@ -227,11 +250,10 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 			return remote.NewTransError(remote.ProtocolError, err)
 		}
 	default:
-		return remote.NewTransErrorWithMsg(remote.InvalidProtocol, "decode failed, codec msg type not match with thriftCodec")
+		return remote.NewTransErrorWithMsg(remote.InvalidProtocol,
+			"decode failed, codec msg type not match with thriftCodec")
 	}
-	tProt.ReadMessageEnd()
-	tProt.Recycle()
-	return err
+	return nil
 }
 
 // Name implements the remote.PayloadCodec interface.

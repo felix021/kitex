@@ -857,7 +857,7 @@ const processor = `
 {{- if not .Oneway}}
 	{{$ResType := .ResType}}
 	{{template "StructLikeCodec" $ResType}}
-{{- end}}
+{{- end}}{{/* not Oneway */}}
 {{- end}}{{/* range .Functions */}}
 {{- end}}{{/* define "Processor" */}}
 `
