@@ -99,6 +99,7 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 	f.Var(&a.ThriftOptions, "thrift", "Specify arguments for the thrift go compiler.")
 	f.Var(&a.Hessian2Options, "hessian2", "Specify arguments for the hessian2 codec.")
 	f.DurationVar(&a.ThriftPluginTimeLimit, "thrift-plugin-time-limit", generator.DefaultThriftPluginTimeLimit, "Specify thrift plugin execution time limit.")
+	f.StringVar(&a.CompilerPath, "compiler-path", "", "Specify the path of thriftgo/protoc.")
 	f.Var(&a.ThriftPlugins, "thrift-plugin", "Specify thrift plugin arguments for the thrift compiler.")
 	f.Var(&a.ProtobufOptions, "protobuf", "Specify arguments for the protobuf compiler.")
 	f.Var(&a.ProtobufPlugins, "protobuf-plugin", "Specify protobuf plugin arguments for the protobuf compiler.(plugin_name:options:out_dir)")
@@ -131,6 +132,7 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"gen_deep_equal",
 		"compatible_names",
 		"frugal_tag",
+		"no_service_code",
 	)
 
 	for _, e := range a.extends {
@@ -301,7 +303,7 @@ func (a *Arguments) BuildCmd(out io.Writer) *exec.Cmd {
 
 	kas := strings.Join(a.Config.Pack(), ",")
 	cmd := &exec.Cmd{
-		Path:   lookupTool(a.IDLType),
+		Path:   LookupTool(a.IDLType, a.CompilerPath),
 		Stdin:  os.Stdin,
 		Stdout: io.MultiWriter(out, os.Stdout),
 		Stderr: io.MultiWriter(out, os.Stderr),
@@ -381,8 +383,7 @@ func (a *Arguments) BuildCmd(out io.Writer) *exec.Cmd {
 	return cmd
 }
 
-var requiredThriftGoVersion = "v0.3.5"
-
+// ValidateCMD check if the path exists and if the version is satisfied
 func ValidateCMD(path string, idlType string) {
 	// check if the path exists
 	if _, err := os.Stat(path); err != nil {
@@ -413,9 +414,10 @@ func ValidateCMD(path string, idlType string) {
 			log.Warnf("thriftgo -version returns '%s', please reinstall thriftgo first.\n", string(out))
 			os.Exit(1)
 		}
-		version := strings.Replace(string(out), "thriftgo ", "", 1)
+		version := strings.Replace(strings.TrimSuffix(string(out), "\n"), "thriftgo ", "", 1)
 		if !versionSatisfied(version, requiredThriftGoVersion) {
-			log.Warnf("[ERROR] thriftgo version not satisfied, please install version >= %s\n", requiredThriftGoVersion)
+			log.Warnf("[ERROR] thriftgo version(%s) not satisfied, please install version >= %s\n",
+				version, requiredThriftGoVersion)
 			os.Exit(1)
 		}
 		return
@@ -463,10 +465,15 @@ func versionSatisfied(current string, required string) bool {
 	return true
 }
 
-func lookupTool(idlType string) string {
+// LookupTool returns the compiler path found in $PATH; if not found, returns $GOPATH/bin/$tool
+func LookupTool(idlType string, compilerPath string) string {
 	tool := "thriftgo"
 	if idlType == "protobuf" {
 		tool = "protoc"
+	}
+	if compilerPath != "" {
+		log.Infof("Will use the specified %s: %s\n", tool, compilerPath)
+		return compilerPath
 	}
 
 	path, err := exec.LookPath(tool)

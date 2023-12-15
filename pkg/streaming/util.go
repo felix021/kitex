@@ -18,6 +18,9 @@ package streaming
 
 import "github.com/cloudwego/kitex/pkg/serviceinfo"
 
+// KitexUnusedProtection may be anonymously referenced in another package to avoid build error
+const KitexUnusedProtection = 0
+
 // UnaryCompatibleMiddleware returns whether to use compatible middleware for unary.
 func UnaryCompatibleMiddleware(mode serviceinfo.StreamingMode, allow bool) bool {
 	return allow && mode == serviceinfo.StreamingUnary

@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudwego/kitex/tool/internal_pkg/util"
 	"github.com/cloudwego/kitex/transport"
+	"github.com/cloudwego/thriftgo/generator/golang/streaming"
 
 	"github.com/cloudwego/thriftgo/generator/backend"
 	"github.com/cloudwego/thriftgo/generator/golang"
@@ -123,6 +124,7 @@ func (c *converter) avoidIncludeConflict(ast *parser.Thrift, ref string) (*parse
 	return ast, ref
 }
 
+// TODO: copy by marshal & unmarshal? to avoid missing fields.
 func (c *converter) copyTreeWithRef(ast *parser.Thrift, ref string) *parser.Thrift {
 	ast, ref = c.avoidIncludeConflict(ast, ref)
 
@@ -155,7 +157,7 @@ func (c *converter) copyFunctionWithRef(f *parser.Function, ref string) *parser.
 		Oneway:       f.Oneway,
 		Void:         f.Void,
 		FunctionType: c.copyTypeWithRef(f.FunctionType, ref),
-		Streaming:    f.Streaming,
+		Annotations:  c.copyAnnotations(f.Annotations),
 	}
 	for _, x := range f.Arguments {
 		y := *x
@@ -422,6 +424,10 @@ func (c *converter) makeService(pkg generator.PkgInfo, svc *golang.Service) (*ge
 }
 
 func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*generator.MethodInfo, error) {
+	st, err := streaming.ParseStreaming(f.Function)
+	if err != nil {
+		return nil, err
+	}
 	mi := &generator.MethodInfo{
 		PkgInfo:            si.PkgInfo,
 		ServiceName:        si.ServiceName,
@@ -431,12 +437,12 @@ func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*
 		Void:               f.Void,
 		ArgStructName:      f.ArgType().GoName().String(),
 		GenArgResultStruct: false,
-		Streaming:          f.Streaming,
-		ClientStreaming:    f.Streaming.ClientStreaming,
-		ServerStreaming:    f.Streaming.ServerStreaming,
+		Streaming:          st,
+		ClientStreaming:    st.ClientStreaming,
+		ServerStreaming:    st.ServerStreaming,
 		ArgsLength:         len(f.Arguments()),
 	}
-	if f.Streaming.IsStreaming {
+	if st.IsStreaming {
 		si.HasStreaming = true
 	}
 
@@ -508,4 +514,19 @@ func (c *converter) getCombineServiceName(name string, svcs []*generator.Service
 
 func (c *converter) IsHessian2() bool {
 	return strings.EqualFold(c.Config.Protocol, transport.HESSIAN2.String())
+}
+
+func (c *converter) copyAnnotations(annotations parser.Annotations) parser.Annotations {
+	copied := make(parser.Annotations, 0, len(annotations))
+	for _, annotation := range annotations {
+		values := make([]string, 0, len(annotation.Values))
+		for _, value := range annotation.Values {
+			values = append(values, value)
+		}
+		copied = append(copied, &parser.Annotation{
+			Key:    annotation.Key,
+			Values: values,
+		})
+	}
+	return copied
 }

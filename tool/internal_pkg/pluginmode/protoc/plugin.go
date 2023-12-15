@@ -24,6 +24,7 @@ import (
 	"text/template"
 
 	genfastpb "github.com/cloudwego/fastpb/protoc-gen-fastpb/generator"
+	"github.com/cloudwego/thriftgo/generator/golang/streaming"
 	gengo "google.golang.org/protobuf/cmd/protoc-gen-go/internal_gengo"
 	"google.golang.org/protobuf/compiler/protogen"
 
@@ -287,7 +288,7 @@ func (pp *protocPlugin) convertTypes(file *protogen.File) (ss []*generator.Servi
 			}
 		}
 		for _, m := range si.Methods {
-			m.BuildStreaming(si.HasStreaming)
+			BuildStreaming(m, si.HasStreaming)
 		}
 		ss = append(ss, si)
 	}
@@ -328,6 +329,29 @@ func (pp *protocPlugin) convertTypes(file *protogen.File) (ss []*generator.Servi
 		ss = append(ss, si)
 	}
 	return
+}
+
+// BuildStreaming builds protobuf MethodInfo.Streaming as for Thrift, to simplify codegen
+func BuildStreaming(mi *generator.MethodInfo, serviceHasStreaming bool) {
+	s := &streaming.Streaming{
+		// pb: if one method is streaming, then the service is streaming, making all methods streaming
+		IsStreaming: serviceHasStreaming,
+	}
+	if mi.ClientStreaming && mi.ServerStreaming {
+		s.Mode = streaming.StreamingBidirectional
+		s.BidirectionalStreaming = true
+		s.ClientStreaming = true
+		s.ServerStreaming = true
+	} else if mi.ClientStreaming && !mi.ServerStreaming {
+		s.Mode = streaming.StreamingClientSide
+		s.ClientStreaming = true
+	} else if !mi.ClientStreaming && mi.ServerStreaming {
+		s.Mode = streaming.StreamingServerSide
+		s.ServerStreaming = true
+	} else if serviceHasStreaming {
+		s.Mode = streaming.StreamingUnary // Unary APIs over HTTP2
+	}
+	mi.Streaming = s
 }
 
 func (pp *protocPlugin) getCombineServiceName(name string, svcs []*generator.ServiceInfo) string {

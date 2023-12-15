@@ -122,6 +122,7 @@ type Config struct {
 	Features              []feature
 	FrugalPretouch        bool
 	ThriftPluginTimeLimit time.Duration
+	CompilerPath          string // specify the path of thriftgo or protoc
 
 	ExtensionFile string
 	tmplExt       *TemplateExtension
