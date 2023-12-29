@@ -134,11 +134,13 @@ func (s *stream) Context() context.Context {
 }
 
 func (s *stream) RecvMsg(m interface{}) error {
-	return s.recvEndpoint(s.stream, m)
+	return s.stream.RecvMsg(m)
+	//return s.recvEndpoint(s.stream, m)
 }
 
 func (s *stream) SendMsg(m interface{}) error {
-	return s.sendEndpoint(s.stream, m)
+	return s.stream.SendMsg(m)
+	//return s.sendEndpoint(s.stream, m)
 }
 
 func (s *stream) Close() error {
