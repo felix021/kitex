@@ -128,7 +128,11 @@ func (md MD) Append(k string, vals ...string) {
 // The order of values for each key is determined by the order in which
 // the mds containing those values are presented to Join.
 func Join(mds ...MD) MD {
-	out := MD{}
+	n := 0
+	for _, md := range mds {
+		n += len(md)
+	}
+	out := make(MD, n)
 	for _, md := range mds {
 		for k, v := range md {
 			out[k] = append(out[k], v...)
