@@ -259,6 +259,35 @@ func newHTTP2Client(ctx context.Context, conn net.Conn, opts ConnectOptions,
 	return t, nil
 }
 
+type preAllocatedStreamFields struct {
+	recvBuffer *recvBuffer
+	writeQuota *writeQuota
+}
+
+var (
+	preallocateChan = make(chan preAllocatedStreamFields, 256)
+	preallocateInit sync.Once
+)
+
+func fillStreamFields(s *Stream) {
+	preallocateInit.Do(func() {
+		go preallocateForStream()
+	})
+	fields := <-preallocateChan
+	s.buf = fields.recvBuffer
+	s.wq = fields.writeQuota
+	s.wq.done = s.done
+}
+
+func preallocateForStream() {
+	for {
+		preallocateChan <- preAllocatedStreamFields{
+			recvBuffer: newRecvBuffer(),
+			writeQuota: newWriteQuota(defaultWriteQuota, nil),
+		}
+	}
+}
+
 func (t *http2Client) newStream(ctx context.Context, callHdr *CallHdr) *Stream {
 	s := &Stream{
 		ctx:            ctx,
@@ -266,11 +295,10 @@ func (t *http2Client) newStream(ctx context.Context, callHdr *CallHdr) *Stream {
 		done:           make(chan struct{}),
 		method:         callHdr.Method,
 		sendCompress:   callHdr.SendCompress,
-		buf:            newRecvBuffer(),
 		headerChan:     make(chan struct{}),
 		contentSubtype: callHdr.ContentSubtype,
 	}
-	s.wq = newWriteQuota(defaultWriteQuota, s.done)
+	fillStreamFields(s)
 	s.requestRead = func(n int) {
 		t.adjustWindow(s, uint32(n))
 	}
