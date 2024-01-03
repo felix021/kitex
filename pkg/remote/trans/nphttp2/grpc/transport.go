@@ -437,7 +437,7 @@ func (s *Stream) SetHeader(md metadata.MD) error {
 		return ErrIllegalHeaderWrite
 	}
 	s.hdrMu.Lock()
-	s.header = metadata.Join(s.header, md)
+	s.header = metadata.AppendMD(s.header, md)
 	s.hdrMu.Unlock()
 	return nil
 }
@@ -460,7 +460,7 @@ func (s *Stream) SetTrailer(md metadata.MD) error {
 		return ErrIllegalHeaderWrite
 	}
 	s.hdrMu.Lock()
-	s.trailer = metadata.Join(s.trailer, md)
+	s.trailer = metadata.AppendMD(s.trailer, md)
 	s.hdrMu.Unlock()
 	return nil
 }

@@ -97,7 +97,13 @@ func (md MD) Len() int {
 
 // Copy returns a copy of md.
 func (md MD) Copy() MD {
-	return Join(md)
+	result := make(MD, len(md))
+	for k, v := range md {
+		values := make([]string, len(v))
+		copy(values, v)
+		result[k] = values
+	}
+	return result
 }
 
 // Get obtains the values for a given key.
@@ -139,6 +145,17 @@ func Join(mds ...MD) MD {
 		}
 	}
 	return out
+}
+
+// AppendMD appends other into md, merging values of the same key.
+func AppendMD(md, other MD) MD {
+	if md == nil {
+		md = make(MD, len(other))
+	}
+	for k, v := range other {
+		md[k] = append(md[k], v...)
+	}
+	return md
 }
 
 type (
