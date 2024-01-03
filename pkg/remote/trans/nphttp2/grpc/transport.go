@@ -85,11 +85,28 @@ type recvBuffer struct {
 	err     error
 }
 
+var recvBufferPool sync.Pool
+
+func newRecvBufferFromPool() *recvBuffer {
+	if b := recvBufferPool.Get(); b != nil {
+		return b.(*recvBuffer)
+	}
+	return newRecvBuffer()
+}
+
 func newRecvBuffer() *recvBuffer {
 	b := &recvBuffer{
 		c: make(chan recvMsg, 1),
 	}
 	return b
+}
+
+func recycleRecvBuffer(b *recvBuffer) {
+	select {
+	case <-b.c: // drain the channel (=reset)
+	default:
+	}
+	recvBufferPool.Put(b)
 }
 
 func (b *recvBuffer) put(r recvMsg) {
@@ -505,7 +522,6 @@ func CreateStream(id uint32, requestRead func(i int)) *Stream {
 		requestRead: requestRead,
 		hdrMu:       sync.Mutex{},
 	}
-
 	return stream
 }
 

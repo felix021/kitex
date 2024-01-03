@@ -308,6 +308,7 @@ func (t *http2Server) operateHeaders(frame *grpcframe.MetaHeadersFrame, handle f
 		method:         state.data.method,
 		contentSubtype: state.data.contentSubtype,
 	}
+
 	if frame.StreamEnded() {
 		// s is just created by the caller. No lock needed.
 		s.state = streamReadDone

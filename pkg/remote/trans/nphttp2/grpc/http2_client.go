@@ -266,10 +266,11 @@ func (t *http2Client) newStream(ctx context.Context, callHdr *CallHdr) *Stream {
 		done:           make(chan struct{}),
 		method:         callHdr.Method,
 		sendCompress:   callHdr.SendCompress,
-		buf:            newRecvBuffer(),
+		buf:            newRecvBufferFromPool(),
 		headerChan:     make(chan struct{}),
 		contentSubtype: callHdr.ContentSubtype,
 	}
+
 	s.wq = newWriteQuota(defaultWriteQuota, s.done)
 	s.requestRead = func(n int) {
 		t.adjustWindow(s, uint32(n))
@@ -368,6 +369,10 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (_ *Strea
 		// If headerChan isn't closed, then close it.
 		if atomic.CompareAndSwapUint32(&s.headerChanClosed, 0, 1) {
 			close(s.headerChan)
+		}
+		if s.buf != nil {
+			recycleRecvBuffer(s.buf)
+			s.buf = nil
 		}
 	}
 	hdr := &headerFrame{
