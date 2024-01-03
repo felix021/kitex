@@ -85,11 +85,25 @@ type recvBuffer struct {
 	err     error
 }
 
+var (
+	recvBufferChan          = make(chan *recvBuffer, 256)
+	recvBufferGeneratorInit sync.Once
+)
+
 func newRecvBuffer() *recvBuffer {
-	b := &recvBuffer{
-		c: make(chan recvMsg, 1),
+	recvBufferGeneratorInit.Do(func() {
+		go recvBufferGenerator()
+	})
+	return <-recvBufferChan
+}
+
+func recvBufferGenerator() {
+	for {
+		b := &recvBuffer{
+			c: make(chan recvMsg, 1),
+		}
+		recvBufferChan <- b
 	}
-	return b
 }
 
 func (b *recvBuffer) put(r recvMsg) {
