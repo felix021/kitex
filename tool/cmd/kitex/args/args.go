@@ -132,7 +132,6 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"gen_deep_equal",
 		"compatible_names",
 		"frugal_tag",
-		"no_service_code",
 		"thrift_streaming",
 	)
 

@@ -26,10 +26,10 @@ import (
 	"text/template"
 
 	"github.com/cloudwego/kitex/tool/internal_pkg/util"
+	"github.com/cloudwego/thriftgo/generator/golang/templates/slim"
 
 	"github.com/cloudwego/thriftgo/generator/golang"
 	"github.com/cloudwego/thriftgo/generator/golang/templates"
-	"github.com/cloudwego/thriftgo/generator/golang/templates/slim"
 	"github.com/cloudwego/thriftgo/parser"
 	"github.com/cloudwego/thriftgo/plugin"
 
@@ -118,7 +118,7 @@ func (p *patcher) buildTemplates() (err error) {
 	tpl := template.New("kitex").Funcs(m)
 	allTemplates := basicTemplates
 	if p.utils.Template() == "slim" {
-		allTemplates = append(allTemplates,
+		allTemplates = append(allTemplates, slim.StructLike,
 			templates.StructLikeDefault,
 			templates.FieldGetOrSet,
 			templates.FieldIsSet,
@@ -134,15 +134,6 @@ func (p *patcher) buildTemplates() (err error) {
 			structLikeProtocol,
 			javaClassName,
 			processor,
-		)
-		// service code templates
-		allTemplates = append(allTemplates,
-			serviceCodeTemplate,
-			templates.Service,
-			templates.FunctionSignature,
-			slim.Client,
-			slim.Processor,
-			slim.StructLike,
 		)
 	} else {
 		allTemplates = append(allTemplates, structLikeCodec,
@@ -192,15 +183,6 @@ func (p *patcher) buildTemplates() (err error) {
 			validateSet,
 			processor,
 		)
-		// service code templates
-		allTemplates = append(allTemplates,
-			serviceCodeTemplate,
-			templates.Service,
-			templates.FunctionSignature,
-			templates.Client,
-			templates.Processor,
-		)
-		allTemplates = append(allTemplates, templates.StructLikeTemplates...)
 	}
 	for _, txt := range allTemplates {
 		tpl = template.Must(tpl.Parse(txt))
@@ -264,13 +246,6 @@ func (p *patcher) patch(req *plugin.Request) (patches []*plugin.Generated, err e
 		// if all scopes are ref, don't generate k-xxx
 		if scope == nil {
 			continue
-		}
-
-		if serviceCodePatch, err := p.patchServiceCode(path, scope, pkgName, base); err != nil {
-			return nil, fmt.Errorf("patch service code failed for %q: err = %v", ast.Filename, err)
-		} else {
-			patches = append(patches, serviceCodePatch)
-			protection[*serviceCodePatch.Name] = serviceCodePatch
 		}
 
 		if p.IsHessian2() {
@@ -455,28 +430,6 @@ func (p *patcher) isBinaryOrStringType(t *parser.Type) bool {
 
 func (p *patcher) IsHessian2() bool {
 	return strings.EqualFold(p.protocol, "hessian2")
-}
-
-func (p *patcher) patchServiceCode(path string, scope *golang.Scope, pkg, base string) (patch *plugin.Generated, err error) {
-	buf := strings.Builder{}
-	data := &struct {
-		Version  string
-		PkgName  string
-		Services []*golang.Service
-	}{
-		Version:  p.version,
-		PkgName:  pkg,
-		Services: scope.Services(),
-	}
-	if err = p.fileTpl.ExecuteTemplate(&buf, "ServiceCode", data); err != nil {
-		return nil, err
-	}
-	servicCodeFile := util.JoinPath(path, fmt.Sprintf("k-service-%s", base))
-	patch = &plugin.Generated{
-		Content: buf.String(),
-		Name:    &servicCodeFile,
-	}
-	return patch, nil
 }
 
 var typeIDToGoType = map[string]string{
