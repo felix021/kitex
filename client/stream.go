@@ -46,9 +46,6 @@ func (kc *kClient) Stream(ctx context.Context, method string, request, response 
 	}
 	var ri rpcinfo.RPCInfo
 	ctx, ri, _ = kc.initRPCInfo(ctx, method, 0, nil)
-	if kc.opt.Streaming.EnableStreamLogID {
-		ctx = streaming.NewCtxWithStreamLogID(ctx, streaming.GenerateStreamLogID(ctx))
-	}
 
 	rpcinfo.AsMutableRPCConfig(ri.Config()).SetInteractionMode(rpcinfo.Streaming)
 	ctx = rpcinfo.NewCtxWithRPCInfo(ctx, ri)

@@ -23,8 +23,6 @@ import (
 )
 
 type StreamingConfig struct {
-	EnableStreamLogID bool // not enable by default
-
 	RecvMiddlewareBuilders []endpoint.RecvMiddlewareBuilder
 	RecvMiddlewares        []endpoint.RecvMiddleware
 

@@ -40,23 +40,3 @@ func SendChain(mws ...SendMiddleware) SendMiddleware {
 		return next
 	}
 }
-
-// SendBuild builds the given middlewares into one middleware.
-func SendBuild(mws []SendMiddleware) SendMiddleware {
-	if len(mws) == 0 {
-		return DummySendMiddleware
-	}
-	return func(next SendEndpoint) SendEndpoint {
-		return mws[0](SendBuild(mws[1:])(next))
-	}
-}
-
-// DummySendMiddleware is a dummy middleware.
-func DummySendMiddleware(next SendEndpoint) SendEndpoint {
-	return next
-}
-
-// DummySendEndpoint is a dummy endpoint.
-func DummySendEndpoint(stream streaming.Stream, message interface{}) (err error) {
-	return nil
-}

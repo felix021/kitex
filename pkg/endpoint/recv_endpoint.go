@@ -40,23 +40,3 @@ func RecvChain(mws ...RecvMiddleware) RecvMiddleware {
 		return next
 	}
 }
-
-// RecvBuild builds the given middlewares into one middleware.
-func RecvBuild(mws []RecvMiddleware) RecvMiddleware {
-	if len(mws) == 0 {
-		return DummyRecvMiddleware
-	}
-	return func(next RecvEndpoint) RecvEndpoint {
-		return mws[0](RecvBuild(mws[1:])(next))
-	}
-}
-
-// DummyRecvMiddleware is a dummy middleware.
-func DummyRecvMiddleware(next RecvEndpoint) RecvEndpoint {
-	return next
-}
-
-// DummyRecvEndpoint is a dummy endpoint.
-func DummyRecvEndpoint(stream streaming.Stream, message interface{}) (err error) {
-	return nil
-}

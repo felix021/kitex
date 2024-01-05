@@ -25,17 +25,6 @@ import (
 	"github.com/cloudwego/kitex/pkg/utils"
 )
 
-// WithEnableStreamLogID instructs kitex client to generate a StreamLogID and add it into context,
-// and send it to server via header.
-func WithEnableStreamLogID() Option {
-	return Option{
-		F: func(o *client.Options, di *utils.Slice) {
-			di.Push(fmt.Sprintf("WithEnableStreamLogID()"))
-			o.Streaming.EnableStreamLogID = true
-		},
-	}
-}
-
 // WithRecvMiddleware adds middleware for client to handle response.
 // It's used for intercepting stream.RecvMsg (called by Recv or CloseAndRecv) calls
 func WithRecvMiddleware(mw endpoint.RecvMiddleware) Option {

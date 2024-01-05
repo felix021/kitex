@@ -52,8 +52,8 @@ func WithFirstMetaHandler(h remote.MetaHandler) Option {
 }
 
 // WithMetaHandler adds a MetaHandler to the end of the current list.
-func WithMetaHandler(h remote.MetaHandler) client.Option {
-	return client.WithMetaHandler(h)
+func WithMetaHandler(h remote.MetaHandler) Option {
+	return ConvertOptionFrom(client.WithMetaHandler(h))
 }
 
 // WithProxy sets the forward Proxy for client.

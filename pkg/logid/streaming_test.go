@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package streaming
+package logid
 
 import (
 	"context"

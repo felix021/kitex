@@ -21,11 +21,10 @@ import (
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 
-	"github.com/cloudwego/kitex/pkg/remote/transmeta"
-	"github.com/cloudwego/kitex/pkg/streaming"
-
+	"github.com/cloudwego/kitex/pkg/logid"
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
+	"github.com/cloudwego/kitex/pkg/remote/transmeta"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 )
 
@@ -54,7 +53,7 @@ func (mi *metainfoClientHandler) OnConnectStream(ctx context.Context) (context.C
 			md = metadata.MD{}
 		}
 		metainfo.ToHTTPHeader(ctx, metainfo.HTTPHeader(md))
-		if streamLogID := streaming.GetStreamLogID(ctx); streamLogID != "" {
+		if streamLogID := logid.GetStreamLogID(ctx); streamLogID != "" {
 			md.Set(transmeta.HTTPStreamLogID, streamLogID)
 		}
 		ctx = metadata.NewOutgoingContext(ctx, md)
@@ -121,7 +120,7 @@ func addStreamIDToContext(ctx context.Context, md metadata.MD) context.Context {
 		// the caller has not set the stream log id, skip
 		return ctx
 	}
-	return streaming.NewCtxWithStreamLogID(ctx, streamLogIDValues[0])
+	return logid.NewCtxWithStreamLogID(ctx, streamLogIDValues[0])
 }
 
 func (mi *metainfoServerHandler) WriteMeta(ctx context.Context, sendMsg remote.Message) (context.Context, error) {
