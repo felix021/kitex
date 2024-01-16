@@ -24,6 +24,7 @@ import (
 
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/cloudwego/fastpb"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -89,6 +90,12 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 	isCompressed := compressor != nil
 
 	var payload []byte
+	defer func() {
+		if rpcStats := rpcinfo.AsMutableRPCStats(message.RPCInfo().Stats()); rpcStats != nil {
+			// TODO: should the dataFrameHeaderLen also be counted in?
+			rpcStats.IncrSendSize(uint64(len(payload)))
+		}
+	}()
 	switch message.ProtocolInfo().CodecType {
 	case serviceinfo.Thrift:
 		payload, err = thrift.MarshalThriftData(ctx, c.ThriftCodec, message.Data())
@@ -157,6 +164,10 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 	d, err := decodeGRPCFrame(ctx, in)
 	if err != nil {
 		return err
+	}
+	if rpcStats := rpcinfo.AsMutableRPCStats(message.RPCInfo().Stats()); rpcStats != nil {
+		// TODO: should the dataFrameHeaderLen also be counted in?
+		rpcStats.IncrRecvSize(uint64(len(d)))
 	}
 	message.SetPayloadLen(len(d))
 	data := message.Data()

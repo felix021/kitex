@@ -18,7 +18,9 @@ package client
 
 import (
 	"context"
+	"io"
 
+	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
@@ -99,15 +101,28 @@ type stream struct {
 
 	sendEndpoint endpoint.SendEndpoint
 	recvEndpoint endpoint.RecvEndpoint
+	done         <-chan struct{}
 }
 
 func newStream(s streaming.Stream, kc *kClient, sendEP endpoint.SendEndpoint, recvEP endpoint.RecvEndpoint) *stream {
-	return &stream{
+	clientStream := &stream{
 		stream:       s,
 		kc:           kc,
 		sendEndpoint: sendEP,
 		recvEndpoint: recvEP,
+		done:         nphttp2.GetStreamDone(s),
 	}
+	workerPool.Go(func() {
+		ctx := s.Context()
+		select {
+		case <-clientStream.done:
+			err := nphttp2.GetStreamCloseError(s)
+			clientStream.finish(err)
+		case <-ctx.Done():
+			clientStream.finish(ctx.Err())
+		}
+	})
+	return clientStream
 }
 
 func (s *stream) SetTrailer(metadata.MD) {
@@ -143,8 +158,14 @@ func (s *stream) SendMsg(m interface{}) error {
 }
 
 func (s *stream) Close() error {
-	ctx := s.stream.Context()
-	ri := rpcinfo.GetRPCInfo(ctx)
-	s.kc.opt.TracerCtl.DoFinish(ctx, ri, nil)
 	return s.stream.Close()
+}
+
+func (s *stream) finish(err error) {
+	if err == io.EOF {
+		err = nil
+	}
+	ctx := s.Context()
+	ri := rpcinfo.GetRPCInfo(ctx)
+	s.kc.opt.TracerCtl.DoFinish(ctx, ri, err)
 }

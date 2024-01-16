@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/codes"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/grpc"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
@@ -130,12 +129,8 @@ func fullMethodName(pkg, svc, method string) string {
 func (c *clientConn) Read(b []byte) (n int, err error) {
 	n, err = c.s.Read(b)
 	if err == io.EOF {
-		if status := c.s.Status(); status.Code() != codes.OK {
-			if bizStatusErr := c.s.BizStatusErr(); bizStatusErr != nil {
-				err = bizStatusErr
-			} else {
-				err = status.Err()
-			}
+		if statusErr := c.s.GetStatusError(); statusErr != nil {
+			err = statusErr
 		}
 	}
 	return n, err

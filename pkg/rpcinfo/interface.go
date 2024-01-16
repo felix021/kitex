@@ -40,13 +40,20 @@ type EndpointInfo interface {
 type RPCStats interface {
 	Record(ctx context.Context, event stats.Event, status stats.Status, info string)
 	SendSize() uint64
+	// LastSendSize returns the size of the last sent message in a stream.
+	LastSendSize() uint64
 	RecvSize() uint64
+	// LastRecvSize returns the size of the last received message in a stream.
+	LastRecvSize() uint64
 	Error() error
 	Panicked() (bool, interface{})
 	GetEvent(event stats.Event) Event
 	Level() stats.Level
 	CopyForRetry() RPCStats
 }
+
+// StreamEventHandler is used to handle stream events
+type StreamEventHandler func(ctx context.Context, event Event)
 
 // Event is the abstraction of an event happened at a specific time.
 type Event interface {
@@ -95,4 +102,8 @@ type RPCInfo interface {
 	Invocation() Invocation
 	Config() RPCConfig
 	Stats() RPCStats
+}
+
+type Recyclable interface {
+	Recycle()
 }

@@ -407,6 +407,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (_ *Strea
 		// The stream was unprocessed by the server.
 		atomic.StoreUint32(&s.unprocessed, 1)
 		s.write(recvMsg{err: err})
+		s.closeError = err
 		close(s.done)
 		// If headerChan isn't closed, then close it.
 		if atomic.CompareAndSwapUint32(&s.headerChanClosed, 0, 1) {
@@ -545,6 +546,7 @@ func (t *http2Client) closeStream(s *Stream, err error, rst bool, rstCode http2.
 	}
 	if err != nil {
 		// This will unblock reads eventually.
+		s.closeError = err
 		s.write(recvMsg{err: err})
 	}
 	// If headerChan isn't closed, then close it.

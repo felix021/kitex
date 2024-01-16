@@ -285,6 +285,12 @@ type Stream struct {
 	// contentSubtype is the content-subtype for requests.
 	// this must be lowercase or the behavior is undefined.
 	contentSubtype string
+	closeError     error
+}
+
+// GetCloseError returns the error recorded when closing the stream
+func (s *Stream) GetCloseError() error {
+	return s.closeError
 }
 
 // isHeaderSent is only valid on the server-side.
@@ -416,6 +422,18 @@ func (s *Stream) Method() string {
 // that is, after Done() is closed.
 func (s *Stream) Status() *status.Status {
 	return s.status
+}
+
+// GetStatusError returns the status error.
+func (s *Stream) GetStatusError() error {
+	if s.status.Code() != codes.OK {
+		if bizStatusErr := s.BizStatusErr(); bizStatusErr != nil {
+			return bizStatusErr
+		} else {
+			return s.status.Err()
+		}
+	}
+	return nil
 }
 
 func (s *Stream) SetBizStatusErr(bizStatusErr kerrors.BizStatusErrorIface) {

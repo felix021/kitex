@@ -18,6 +18,7 @@ package nphttp2
 
 import (
 	"context"
+	"io"
 	"net"
 
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
@@ -37,6 +38,30 @@ type stream struct {
 	svcInfo *serviceinfo.ServiceInfo
 	conn    net.Conn // clientConn or serverConn
 	handler remote.TransReadWriter
+}
+
+// GetStreamDone is used to get the underlying done channel for client side stream
+func GetStreamDone(s streaming.Stream) <-chan struct{} {
+	if st, ok := s.(*stream); ok {
+		return st.conn.(*clientConn).s.Done()
+	}
+	return nil
+}
+
+// GetStreamCloseError is used to get the close error for client side stream
+// If the stream is ended normally with an EOF, return the status error (if non-nil)
+func GetStreamCloseError(s streaming.Stream) error {
+	if st, ok := s.(*stream); ok {
+		grpcStream := st.conn.(*clientConn).s
+		err := grpcStream.GetCloseError()
+		if err == io.EOF {
+			if statusErr := grpcStream.GetStatusError(); statusErr != nil {
+				err = statusErr
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 // NewStream ...

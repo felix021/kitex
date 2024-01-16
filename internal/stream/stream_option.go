@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
 )
 
 type StreamingConfig struct {
@@ -28,22 +29,30 @@ type StreamingConfig struct {
 
 	SendMiddlewareBuilders []endpoint.SendMiddlewareBuilder
 	SendMiddlewares        []endpoint.SendMiddleware
+
+	EventHandler rpcinfo.StreamEventHandler
 }
 
 func (c *StreamingConfig) InitMiddlewares(ctx context.Context) {
+	if c.EventHandler != nil {
+		c.RecvMiddlewares = append(c.RecvMiddlewares, c.streamRecvTraceMW(ctx))
+		c.SendMiddlewares = append(c.SendMiddlewares, c.streamSendTraceMW(ctx))
+	}
+
 	if len(c.RecvMiddlewareBuilders) > 0 {
 		recvMiddlewares := make([]endpoint.RecvMiddleware, 0, len(c.RecvMiddlewareBuilders))
 		for _, mwb := range c.RecvMiddlewareBuilders {
 			recvMiddlewares = append(recvMiddlewares, mwb(ctx))
 		}
-		c.RecvMiddlewares = recvMiddlewares
+		c.RecvMiddlewares = append(c.RecvMiddlewares, recvMiddlewares...)
 	}
+
 	if len(c.SendMiddlewareBuilders) > 0 {
 		sendMiddlewares := make([]endpoint.SendMiddleware, 0, len(c.SendMiddlewareBuilders))
 		for _, mwb := range c.SendMiddlewareBuilders {
 			sendMiddlewares = append(sendMiddlewares, mwb(ctx))
 		}
-		c.SendMiddlewares = sendMiddlewares
+		c.SendMiddlewares = append(c.SendMiddlewares, sendMiddlewares...)
 	}
 }
 

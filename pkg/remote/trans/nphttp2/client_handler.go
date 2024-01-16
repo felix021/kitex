@@ -67,11 +67,11 @@ func (h *cliTransHandler) Read(ctx context.Context, conn net.Conn, msg remote.Me
 	defer buf.Release(err)
 
 	// set recv grpc compressor at client to decode the pack from server
-	ri := rpcinfo.GetRPCInfo(ctx)
+	ri := msg.RPCInfo()
 	remote.SetRecvCompressor(ri, conn.(*clientConn).GetRecvCompress())
 	err = h.codec.Decode(ctx, msg, buf)
 	if bizStatusErr, isBizErr := kerrors.FromBizStatusError(err); isBizErr {
-		if setter, ok := msg.RPCInfo().Invocation().(rpcinfo.InvocationSetter); ok {
+		if setter, ok := ri.Invocation().(rpcinfo.InvocationSetter); ok {
 			setter.SetBizStatusErr(bizStatusErr)
 			return ctx, nil
 		}
