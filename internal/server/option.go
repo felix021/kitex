@@ -99,6 +99,7 @@ type Options struct {
 	Streaming stream.StreamingConfig
 
 	RefuseTrafficWithoutServiceName bool
+	EnableProcessingTimeout         bool
 }
 
 type Limit struct {

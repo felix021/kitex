@@ -56,3 +56,15 @@ func ClientPanicToErr(ctx context.Context, panicInfo interface{}, ri RPCInfo, lo
 	}
 	return e
 }
+
+// ServerPanicToErr to transform the panic info to error, and output the error if needed.
+func ServerPanicToErr(ctx context.Context, panicInfo interface{}, ri RPCInfo, logErr bool) error {
+	e := fmt.Errorf("KITEX: server panic, method=%s, from_service=%s, error=%v\nstack=%s",
+		ri.To().Method(), ri.From().ServiceName(), panicInfo, debug.Stack())
+	rpcStats := AsMutableRPCStats(ri.Stats())
+	rpcStats.SetPanicked(e)
+	if logErr {
+		klog.CtxErrorf(ctx, "%s", e.Error())
+	}
+	return e
+}

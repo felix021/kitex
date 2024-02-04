@@ -46,6 +46,10 @@ var (
 	ErrRPCFinish = &basicError{"rpc call finished"}
 	// ErrRoute happens when router fail to route this call
 	ErrRoute = &basicError{"rpc route failed"}
+
+	// ErrServerProcessingTimeout should be another error other than ErrRPCTimeout
+	// Note: the processing time of middlewares are included
+	ErrServerProcessingTimeout = &basicError{"server processing timeout"}
 )
 
 // More detailed error types

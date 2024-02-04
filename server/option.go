@@ -365,3 +365,20 @@ func WithRefuseTrafficWithoutServiceName() Option {
 		o.RefuseTrafficWithoutServiceName = true
 	}}
 }
+
+// WithEnableProcessingTimeout enables handler timeout.
+// Available since Kitex >= v0.9.0
+// If enabled, a timeout middleware will be added to the beginning of the middleware chain.
+// The timeout value will be read from RPCInfo.Config().RPCTimeout(), which can be set by a custom MetaHandler
+// For an opensource Kitex user, TTHeader has builtin support of timeout-passing (not enabled by default):
+//   - Client side: add the following NewClient options for enabling TTHeader and setting the timeout to TTHeader
+//     client.WithTransportProtocol(transport.TTHeader),
+//     client.WithMetaHandler(transmeta.ClientTTHeaderHandler),
+//   - Server side: add the following NewServer options for reading from TTHeader and enable timeout control
+//     server.WithMetaHandler(transmeta.ServerTTHeaderHandler)
+//     server.WithEnableProcessingTimeout(true)
+func WithEnableProcessingTimeout(enable bool) Option {
+	return Option{F: func(o *internal_server.Options, di *utils.Slice) {
+		o.EnableProcessingTimeout = enable
+	}}
+}
