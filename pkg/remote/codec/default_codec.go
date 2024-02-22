@@ -203,11 +203,12 @@ func (c *defaultCodec) encodeMetaAndPayloadWithCRC32C(ctx context.Context, messa
 	}
 	// get the payload from buffer
 	var payload []byte
-	if nc, ok := newPayloadOut.(remote.NocopyWrittenBytesGetter); ok {
-		payload, err = nc.BytesNocopy()
-	} else {
-		payload, err = newPayloadOut.Bytes()
-	}
+	payload, err = newPayloadOut.Bytes()
+	// if nc, ok := newPayloadOut.(remote.NocopyWrittenBytesGetter); ok {
+	// 	payload, err = nc.BytesNocopy()
+	// } else {
+	// 	payload, err = newPayloadOut.Bytes()
+	// }
 	newPayloadOut.Release(err)
 	if err != nil {
 		return err
@@ -227,11 +228,12 @@ func (c *defaultCodec) encodeMetaAndPayloadWithCRC32C(ctx context.Context, messa
 	}
 
 	// 3. write payload to the buffer after TTHeader
-	if ncWriter, ok := out.(remote.NocopyWrite); ok {
-		err = ncWriter.WriteDirect(payload, 0)
-	} else {
-		_, err = out.WriteBinary(payload)
-	}
+	_, err = out.WriteBinary(payload)
+	//if ncWriter, ok := out.(remote.NocopyWrite); ok {
+	//	err = ncWriter.WriteDirect(payload, 0)
+	//} else {
+	//	_, err = out.WriteBinary(payload)
+	//}
 	return err
 }
 
