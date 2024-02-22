@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/cloudwego/kitex/pkg/klog"
 
 	"github.com/cloudwego/kitex/pkg/protocol/bthrift"
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -193,6 +194,8 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 	err = c.unmarshalThriftData(ctx, tProt, methodName, data, dataLen)
 	rpcinfo.Record(ctx, ri, stats.WaitReadFinish, err)
 	if err != nil {
+		klog.CtxErrorf(ctx, "thrift unmarshal data failed: %s, payloadLen=%v, dataLen=%v",
+			err.Error(), message.PayloadLen(), dataLen)
 		return err
 	}
 

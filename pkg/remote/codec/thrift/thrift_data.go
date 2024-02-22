@@ -22,6 +22,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/bytedance/gopkg/lang/mcache"
+	"github.com/cloudwego/kitex/pkg/klog"
 
 	"github.com/cloudwego/kitex/pkg/protocol/bthrift"
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -175,7 +176,11 @@ func (c thriftCodec) hyperUnmarshal(tProt *BinaryProtocol, data interface{}, dat
 	if err != nil {
 		return remote.NewTransError(remote.ProtocolError, err)
 	}
-	return c.hyperMessageUnmarshal(buf, data)
+	if err = c.hyperMessageUnmarshal(buf, data); err != nil {
+		klog.Errorf("hyper unmarshal failed: %s, dataLen=%d, buf=%v", err, dataLen, buf)
+		return err
+	}
+	return nil
 }
 
 // verifyUnmarshalBasicThriftDataType verifies whether data could be unmarshal by old thrift way
