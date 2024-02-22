@@ -164,7 +164,7 @@ func (c *defaultCodec) EncodePayload(ctx context.Context, message remote.Message
 func (c *defaultCodec) EncodeMetaAndPayload(ctx context.Context, message remote.Message, out remote.ByteBuffer, me remote.MetaEncoder) error {
 	tp := message.ProtocolInfo().TransProto
 	if c.crc32Check && tp&transport.TTHeader == transport.TTHeader {
-		return c.encodeMetaAndPayloadWithCRC32C(ctx, message, out, c)
+		return c.encodeMetaAndPayloadWithCRC32C(ctx, message, out)
 	}
 
 	var err error
@@ -192,13 +192,13 @@ func (c *defaultCodec) EncodeMetaAndPayload(ctx context.Context, message remote.
 }
 
 // encodeMetaAndPayloadWithCRC32C encodes payload and meta with crc32c checksum of the payload.
-func (c *defaultCodec) encodeMetaAndPayloadWithCRC32C(ctx context.Context, message remote.Message, out remote.ByteBuffer, me remote.MetaEncoder) error {
+func (c *defaultCodec) encodeMetaAndPayloadWithCRC32C(ctx context.Context, message remote.Message, out remote.ByteBuffer) error {
 	var err error
 
 	// 1. encode payload and calculate crc32c checksum
 	newPayloadOut := remote.NewWriterBuffer(PayloadBufferSize)
 
-	if err = me.EncodePayload(ctx, message, newPayloadOut); err != nil {
+	if err = c.EncodePayload(ctx, message, newPayloadOut); err != nil {
 		return err
 	}
 	// get the payload from buffer
@@ -228,6 +228,16 @@ func (c *defaultCodec) encodeMetaAndPayloadWithCRC32C(ctx context.Context, messa
 	}
 
 	// 3. write payload to the buffer after TTHeader
+	if message.ProtocolInfo().TransProto&transport.Framed == transport.Framed {
+		if len(payload) < 4 {
+			klog.CtxErrorf(ctx, "XXXX invalid payload length: %d", len(payload))
+		} else {
+			framedSize := binary.BigEndian.Uint32(payload[0:4])
+			if framedSize == 0 {
+				klog.CtxErrorf(ctx, "XXXX invalid framed size: %d", framedSize)
+			}
+		}
+	}
 	_, err = out.WriteBinary(payload)
 	//if ncWriter, ok := out.(remote.NocopyWrite); ok {
 	//	err = ncWriter.WriteDirect(payload, 0)
