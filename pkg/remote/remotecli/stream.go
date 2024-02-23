@@ -21,7 +21,6 @@ import (
 	"context"
 
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/streaming"
 )
@@ -40,5 +39,9 @@ func NewStream(ctx context.Context, ri rpcinfo.RPCInfo, handler remote.ClientTra
 	if err != nil {
 		return nil, err
 	}
-	return nphttp2.NewStream(ctx, opt.SvcInfo, rawConn, handler), nil
+
+	if newStreamer, ok := handler.(remote.StreamAllocator); ok {
+		return newStreamer.NewStream(ctx, opt.SvcInfo, rawConn, handler)
+	}
+	panic("unable to create new stream")
 }

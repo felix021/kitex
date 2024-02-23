@@ -27,12 +27,17 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote/trans/netpoll"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/grpc"
+	"github.com/cloudwego/kitex/pkg/remote/trans/ttheader"
 )
 
 func newServerRemoteOption() *remote.ServerOption {
 	return &remote.ServerOption{
-		TransServerFactory:    netpoll.NewTransServerFactory(),
-		SvrHandlerFactory:     detection.NewSvrTransHandlerFactory(netpoll.NewSvrTransHandlerFactory(), nphttp2.NewSvrTransHandlerFactory()),
+		TransServerFactory: netpoll.NewTransServerFactory(),
+		SvrHandlerFactory: detection.NewSvrTransHandlerFactory(
+			netpoll.NewSvrTransHandlerFactory(),
+			nphttp2.NewSvrTransHandlerFactory(),
+			ttheader.NewSvrTransHandlerFactory(), // for Streaming over TTHeader
+		),
 		Codec:                 codec.NewDefaultCodec(),
 		Address:               defaultAddress,
 		ExitWaitTime:          defaultExitWaitTime,

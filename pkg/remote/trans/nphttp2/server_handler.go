@@ -177,15 +177,8 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) error {
 				}
 			}
 
-			var serviceName string
-			idx := strings.LastIndex(sm[:pos], ".")
-			if idx == -1 {
-				ink.SetPackageName("")
-				serviceName = sm[0:pos]
-			} else {
-				ink.SetPackageName(sm[:idx])
-				serviceName = sm[idx+1 : pos]
-			}
+			packageName, serviceName := rpcinfo.SplitPackageAndService(sm[:pos])
+			ink.SetPackageName(packageName)
 			ink.SetServiceName(serviceName)
 
 			// set recv grpc compressor at server to decode the pack from client

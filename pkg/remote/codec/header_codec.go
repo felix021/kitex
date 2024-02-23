@@ -102,6 +102,7 @@ const (
 	ProtocolIDThriftCompact   ProtocolID = 0x02 // Kitex not support
 	ProtocolIDThriftCompactV2 ProtocolID = 0x03 // Kitex not support
 	ProtocolIDKitexProtobuf   ProtocolID = 0x04
+	ProtocolIDGeneric         ProtocolID = 0x05 // For arbitrary payload, should be supported by the other end
 	ProtocolIDDefault                    = ProtocolIDThriftBinary
 )
 
@@ -116,7 +117,7 @@ const (
 
 type ttHeader struct{}
 
-func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote.ByteBuffer) (totalLenField []byte, err error) {
+func (t ttHeader) Encode(ctx context.Context, message remote.Message, out remote.ByteBuffer) (totalLenField []byte, err error) {
 	// 1. header meta
 	var headerMeta []byte
 	headerMeta, err = out.Malloc(TTHeaderMetaSize)
@@ -156,7 +157,7 @@ func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote
 	return totalLenField, err
 }
 
-func (t ttHeader) decode(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
+func (t ttHeader) Decode(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
 	headerMeta, err := in.Next(TTHeaderMetaSize)
 	if err != nil {
 		return perrors.NewProtocolError(err)
