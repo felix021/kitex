@@ -21,6 +21,8 @@ import (
 	"net"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/serviceinfo"
+	"github.com/cloudwego/kitex/pkg/streaming"
 )
 
 // ClientTransHandlerFactory to new TransHandler for client
@@ -52,6 +54,14 @@ type TransHandler interface {
 // ClientTransHandler is just TransHandler.
 type ClientTransHandler interface {
 	TransHandler
+}
+
+// StreamAllocator is used for creating a new stream for kitex clients
+// it should be implemented in a ClientTransHandler with streaming support
+type StreamAllocator interface {
+	NewStream(
+		ctx context.Context, svcInfo *serviceinfo.ServiceInfo, conn net.Conn, handler TransReadWriter,
+	) (streaming.Stream, error)
 }
 
 // ServerTransHandler have some new functions.

@@ -55,6 +55,10 @@ var (
 	_ remote.MetaDecoder = (*defaultCodec)(nil)
 )
 
+func GetTTHeaderCodec() ttHeader {
+	return ttHeaderCodec
+}
+
 // NewDefaultCodec creates the default protocol sniffing codec supporting thrift and protobuf.
 func NewDefaultCodec() remote.Codec {
 	// No size limit by default
@@ -131,7 +135,7 @@ func (c *defaultCodec) EncodeMetaAndPayload(ctx context.Context, message remote.
 	// 1. encode header and return totalLenField if needed
 	// totalLenField will be filled after payload encoded
 	if tp&transport.TTHeader == transport.TTHeader {
-		if totalLenField, err = ttHeaderCodec.encode(ctx, message, out); err != nil {
+		if totalLenField, err = ttHeaderCodec.Encode(ctx, message, out); err != nil {
 			return err
 		}
 	}
@@ -170,7 +174,7 @@ func (c *defaultCodec) DecodeMeta(ctx context.Context, message remote.Message, i
 	// 1. decode header
 	if isTTHeader {
 		// TTHeader
-		if err = ttHeaderCodec.decode(ctx, message, in); err != nil {
+		if err = ttHeaderCodec.Decode(ctx, message, in); err != nil {
 			return err
 		}
 		if flagBuf, err = in.Peek(2 * Size32); err != nil {

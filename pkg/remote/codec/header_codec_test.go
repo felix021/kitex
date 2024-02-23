@@ -47,7 +47,7 @@ func TestTTHeaderCodec(t *testing.T) {
 
 			// encode
 			buf := tb.NewBuffer()
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, buf)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, buf)
 			binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(t, err == nil, err)
 			buf.Flush()
@@ -55,7 +55,7 @@ func TestTTHeaderCodec(t *testing.T) {
 			// decode
 			recvMsg := initServerRecvMsg()
 			test.Assert(t, err == nil, err)
-			err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 			test.Assert(t, err == nil, err)
 			test.Assert(t, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 		})
@@ -75,14 +75,14 @@ func TestTTHeaderCodecWithTransInfo(t *testing.T) {
 
 			// encode
 			buf := tb.NewBuffer()
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, buf)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, buf)
 			binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(t, err == nil, err)
 			buf.Flush()
 
 			// decode
 			recvMsg := initServerRecvMsg()
-			err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 			test.Assert(t, err == nil, err)
 			test.Assert(t, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 
@@ -110,14 +110,14 @@ func TestTTHeaderCodecWithTransInfoWithGDPRToken(t *testing.T) {
 
 			// encode
 			buf := tb.NewBuffer()
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, buf)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, buf)
 			binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(t, err == nil, err)
 			buf.Flush()
 
 			// decode
 			recvMsg := initServerRecvMsg()
-			err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 			test.Assert(t, err == nil, err)
 			test.Assert(t, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 
@@ -146,14 +146,14 @@ func TestTTHeaderCodecWithTransInfoFromMetaInfoGDPRToken(t *testing.T) {
 
 			// encode
 			buf := tb.NewBuffer()
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, buf)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, buf)
 			binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(t, err == nil, err)
 			buf.Flush()
 
 			// decode
 			recvMsg := initServerRecvMsg()
-			err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 			test.Assert(t, err == nil, err)
 			test.Assert(t, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 
@@ -178,13 +178,13 @@ func TestFillBasicInfoOfTTHeader(t *testing.T) {
 		sendMsg.TransInfo().TransStrInfo()[transmeta.HeaderTransRemoteAddr] = mockAddr
 		sendMsg.TransInfo().TransIntInfo()[transmeta.FromService] = mockServiceName
 		buf := tb.NewBuffer()
-		totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, buf)
+		totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, buf)
 		binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 		test.Assert(t, err == nil, err)
 		buf.Flush()
 		// decode
 		recvMsg := initServerRecvMsg()
-		err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+		err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 		test.Assert(t, err == nil, err)
 		test.Assert(t, recvMsg.TransInfo().TransStrInfo()[transmeta.HeaderTransRemoteAddr] == mockAddr)
 		test.Assert(t, recvMsg.RPCInfo().From().Address().String() == mockAddr)
@@ -195,7 +195,7 @@ func TestFillBasicInfoOfTTHeader(t *testing.T) {
 		sendMsg = initServerSendMsg(transport.TTHeader)
 		sendMsg.TransInfo().TransStrInfo()[transmeta.HeaderTransRemoteAddr] = mockAddr
 		buf = tb.NewBuffer()
-		totalLenField, err = ttHeaderCodec.encode(ctx, sendMsg, buf)
+		totalLenField, err = ttHeaderCodec.Encode(ctx, sendMsg, buf)
 		binary.BigEndian.PutUint32(totalLenField, uint32(buf.MallocLen()-Size32+mockPayloadLen))
 		test.Assert(t, err == nil, err)
 		buf.Flush()
@@ -203,7 +203,7 @@ func TestFillBasicInfoOfTTHeader(t *testing.T) {
 		recvMsg = initClientRecvMsg()
 		toInfo := remoteinfo.AsRemoteInfo(recvMsg.RPCInfo().To())
 		toInfo.SetInstance(&mockInst{})
-		err = ttHeaderCodec.decode(ctx, recvMsg, buf)
+		err = ttHeaderCodec.Decode(ctx, recvMsg, buf)
 		test.Assert(t, err == nil, err)
 		test.Assert(t, recvMsg.TransInfo().TransStrInfo()[transmeta.HeaderTransRemoteAddr] == mockAddr)
 		test.Assert(t, toInfo.Address().String() == mockAddr, toInfo.Address())
@@ -218,7 +218,7 @@ func BenchmarkTTHeaderCodec(b *testing.B) {
 		sendMsg := initClientSendMsg(transport.TTHeader)
 		// encode
 		out := remote.NewWriterBuffer(256)
-		totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, out)
+		totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, out)
 		binary.BigEndian.PutUint32(totalLenField, uint32(out.MallocLen()-Size32+mockPayloadLen))
 		test.Assert(b, err == nil, err)
 
@@ -227,7 +227,7 @@ func BenchmarkTTHeaderCodec(b *testing.B) {
 		buf, err := out.Bytes()
 		test.Assert(b, err == nil, err)
 		in := remote.NewReaderBuffer(buf)
-		err = ttHeaderCodec.decode(ctx, recvMsg, in)
+		err = ttHeaderCodec.Decode(ctx, recvMsg, in)
 		test.Assert(b, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 		test.Assert(b, err == nil, err)
 	}
@@ -248,7 +248,7 @@ func BenchmarkTTHeaderWithTransInfoParallel(b *testing.B) {
 
 			// encode
 			out := remote.NewWriterBuffer(256)
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, out)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, out)
 			binary.BigEndian.PutUint32(totalLenField, uint32(out.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(b, err == nil, err)
 
@@ -257,7 +257,7 @@ func BenchmarkTTHeaderWithTransInfoParallel(b *testing.B) {
 			buf, err := out.Bytes()
 			test.Assert(b, err == nil, err)
 			in := remote.NewReaderBuffer(buf)
-			err = ttHeaderCodec.decode(ctx, recvMsg, in)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, in)
 			test.Assert(b, err == nil, err)
 			test.Assert(b, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 
@@ -281,7 +281,7 @@ func BenchmarkTTHeaderCodecParallel(b *testing.B) {
 			sendMsg := initClientSendMsg(transport.TTHeader)
 			// encode
 			out := remote.NewWriterBuffer(256)
-			totalLenField, err := ttHeaderCodec.encode(ctx, sendMsg, out)
+			totalLenField, err := ttHeaderCodec.Encode(ctx, sendMsg, out)
 			binary.BigEndian.PutUint32(totalLenField, uint32(out.MallocLen()-Size32+mockPayloadLen))
 			test.Assert(b, err == nil, err)
 
@@ -290,7 +290,7 @@ func BenchmarkTTHeaderCodecParallel(b *testing.B) {
 			buf, err := out.Bytes()
 			test.Assert(b, err == nil, err)
 			in := remote.NewReaderBuffer(buf)
-			err = ttHeaderCodec.decode(ctx, recvMsg, in)
+			err = ttHeaderCodec.Decode(ctx, recvMsg, in)
 			test.Assert(b, err == nil, err)
 			test.Assert(b, recvMsg.PayloadLen() == mockPayloadLen, recvMsg.PayloadLen())
 		}
