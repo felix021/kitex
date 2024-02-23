@@ -17,6 +17,7 @@
 package rpcinfo
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -165,4 +166,13 @@ func (i *invocation) zero() {
 	for key := range i.extra {
 		delete(i.extra, key)
 	}
+}
+
+// SplitPackageAndService splits package and service name.
+func SplitPackageAndService(service string) (string, string) {
+	pos := strings.LastIndexByte(service, '.')
+	if pos == -1 {
+		return "", service
+	}
+	return service[:pos], service[pos+1:]
 }

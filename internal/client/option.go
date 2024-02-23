@@ -21,6 +21,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/cloudwego/kitex/pkg/remote/trans/ttheader"
 	"github.com/cloudwego/localsession/backup"
 
 	"github.com/cloudwego/kitex/internal/configutil"
@@ -182,6 +183,10 @@ func (o *Options) initRemoteOpt() {
 		}
 		o.RemoteOpt.ConnPool = nphttp2.NewConnPool(o.Svr.ServiceName, o.GRPCConnPoolSize, *o.GRPCConnectOpts)
 		o.RemoteOpt.CliHandlerFactory = nphttp2.NewCliTransHandlerFactory()
+	} else if o.Configs.TransportProtocol()&transport.TTHeader == transport.TTHeader {
+		o.RemoteOpt.CliHandlerFactory = ttheader.NewCliTransHandlerFactory()
+	} else {
+		// specify with `client.WithTransHandlerFactory(factory)` for custom streaming transport
 	}
 	if o.RemoteOpt.ConnPool == nil {
 		if o.PoolCfg != nil {
