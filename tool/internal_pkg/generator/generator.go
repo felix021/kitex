@@ -137,6 +137,8 @@ type Config struct {
 	DeepCopyAPI           bool
 	Protocol              string
 	HandlerReturnKeepResp bool
+
+	ServerStreamingGetRequest bool
 }
 
 // Pack packs the Config into a slice of "key=val" strings.
@@ -461,6 +463,7 @@ func (g *generator) updatePackageInfo(pkg *PackageInfo) {
 	pkg.ExternalKitexGen = g.Use
 	pkg.FrugalPretouch = g.FrugalPretouch
 	pkg.Module = g.ModuleName
+	pkg.ServerStreamingGetRequest = g.ServerStreamingGetRequest
 	if strings.EqualFold(g.Protocol, transport.HESSIAN2.String()) {
 		pkg.Protocol = transport.HESSIAN2
 	}

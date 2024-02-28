@@ -22,11 +22,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	kitexutils "github.com/cloudwego/kitex/pkg/utils"
 	"github.com/cloudwego/netpoll"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
@@ -225,6 +227,12 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) error {
 					// making streaming unary APIs capable of using the same server middleware as non-streaming APIs
 					// note: rawStream skips recv/send middleware for unary API requests to avoid confusion
 					err = invokeStreamUnaryHandler(rCtx, rawStream, methodInfo, t.inkHdlFunc, ri)
+				} else if methodInfo.StreamingMode() == serviceinfo.StreamingServer && t.opt.ServerStreamingGetRequest {
+					var req interface{}
+					req, err = getRequestForServerStreamingRequest(st, methodInfo)
+					if err == nil {
+						err = t.inkHdlFunc(rCtx, &streaming.Args{Stream: st, Request: req}, nil)
+					}
 				} else {
 					err = t.inkHdlFunc(rCtx, &streaming.Args{Stream: st}, nil)
 				}
@@ -252,6 +260,23 @@ func (t *svrTransHandler) OnRead(ctx context.Context, conn net.Conn) error {
 		return ctx
 	})
 	return nil
+}
+
+func getRequestForServerStreamingRequest(st *streamWithMiddleware, info serviceinfo.MethodInfo) (req interface{}, err error) {
+	realArgs := info.NewArgs()
+	if kArgs, ok := realArgs.(kitexutils.KitexArgs); ok {
+		// get the pointer of request by reflect (for thrift/protobuf requests)
+		reqType := reflect.TypeOf(kArgs.GetFirstArgument()).Elem()
+		reqValue := reflect.New(reqType).Elem()
+		req = reqValue.Addr().Interface()
+	} else {
+		// to be compatible with generic server, whose request might not have implemented KitexArgs
+		req = realArgs
+	}
+	if err = st.RecvMsg(req); err != nil {
+		return nil, err
+	}
+	return req, nil
 }
 
 // invokeStreamUnaryHandler allows unary APIs over HTTP2 to use the same server middleware as non-streaming APIs.

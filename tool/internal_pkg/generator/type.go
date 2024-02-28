@@ -51,6 +51,9 @@ type PackageInfo struct {
 	Protocol         transport.Protocol
 	IDLName          string
 	ServerPkg        string
+
+	// allow server middleware to get request for server streaming api requests
+	ServerStreamingGetRequest bool
 }
 
 // AddImport .

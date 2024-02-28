@@ -125,6 +125,8 @@ type ServerOption struct {
 	// for thrift streaming, this is enabled by default
 	// for grpc(protobuf) streaming, it's disabled by default, enable with server.WithCompatibleMiddlewareForUnary
 	CompatibleMiddlewareForUnary bool
+
+	ServerStreamingGetRequest bool
 }
 
 // ClientOption is used to init the remote client.

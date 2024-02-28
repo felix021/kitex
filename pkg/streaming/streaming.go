@@ -68,7 +68,12 @@ type WithDoFinish interface {
 
 // Args endpoint request
 type Args struct {
-	Stream Stream
+	Stream  Stream
+	Request interface{} // for server streaming api
+}
+
+func (a *Args) GetFirstArgument() interface{} {
+	return a.Request
 }
 
 // Result endpoint response

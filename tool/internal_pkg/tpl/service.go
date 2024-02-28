@@ -186,10 +186,14 @@ func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, 
 		st := streamingArgs.Stream
 		stream := &{{LowerFirst .ServiceName}}{{.RawName}}Server{st}
 		{{- if $serverSide}}
+			{{- if $.ServerStreamingGetRequest }}
+		req := streamingArgs.Request.({{$arg.Type}})
+			{{- else}}
 		req := new({{NotPtr $arg.Type}})
 		if err := st.RecvMsg(req); err != nil {
 			return err
 		}
+			{{- end}}
 		{{- end}}
 		return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}({{if $serverSide}}req, {{end}}stream)
 	{{- end}} {{/* $unary end */}}
@@ -238,10 +242,14 @@ func {{LowerFirst .Name}}Handler(ctx context.Context, handler interface{}, arg, 
 	return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(stream)
 		{{- else}} {{/* !$serverSide */}}
 		{{- $RequestType := $arg.Type}}
+			{{- if $.ServerStreamingGetRequest }}
+	req := st.Request.({{$RequestType}})
+			{{- else}}
 	req := new({{NotPtr $RequestType}})
 	if err := st.Stream.RecvMsg(req); err != nil {
 		return err
 	}
+			{{- end}}
 	return handler.({{.PkgRefName}}.{{.ServiceName}}).{{.Name}}(req, stream)
 		{{- end}} {{/* $serverSide end*/}}
 	{{- end}} {{/* thrift end */}}

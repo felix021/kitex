@@ -123,6 +123,7 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"Generate codes with injecting deep copy method.")
 	f.StringVar(&a.Protocol, "protocol", "",
 		"Specify a protocol for codec")
+	f.BoolVar(&a.ServerStreamingGetRequest, "server-streaming-get-request", false, "allow server middleware to get request for server streaming api requests")
 	a.RecordCmd = os.Args
 	a.Version = version
 	a.ThriftOptions = append(a.ThriftOptions,

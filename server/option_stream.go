@@ -75,3 +75,11 @@ func WithCompatibleMiddlewareForUnary() Option {
 		o.RemoteOpt.CompatibleMiddlewareForUnary = true
 	}}
 }
+
+// WithServerStreamingGetRequest enables server streaming APIs to get the request in server middlewares
+func WithServerStreamingGetRequest() Option {
+	return Option{F: func(o *Options, di *utils.Slice) {
+		di.Push("WithServerStreamingGetRequest")
+		o.RemoteOpt.ServerStreamingGetRequest = true
+	}}
+}
