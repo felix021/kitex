@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/status"
 )
 
+// only kitex errors will be converted
 var kitexErrConvTab = map[error]codes.Code{
 	kerrors.ErrInternalException: codes.Internal,
 	kerrors.ErrOverlimit:         codes.ResourceExhausted,
@@ -61,8 +62,14 @@ func convertStatus(err error) *status.Status {
 		return status.New(codes.Code(te.TypeID()), err.Error())
 	}
 	// covert from kitex error
-	if c, ok := kitexErrConvTab[err]; ok {
-		return status.New(c, err.Error())
+	if kerrors.IsKitexError(err) {
+		basicError := err
+		if detailError, ok := err.(*kerrors.DetailedError); ok {
+			basicError = detailError.ErrorType()
+		}
+		if c, ok := kitexErrConvTab[basicError]; ok {
+			return status.New(c, err.Error())
+		}
 	}
 	return status.New(codes.Internal, err.Error())
 }

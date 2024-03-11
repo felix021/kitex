@@ -27,10 +27,20 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/status"
 )
 
+var _ error = (*mockError)(nil)
+
+type mockError struct{}
+
+func (m mockError) Error() string {
+	return "mock"
+}
+
 func TestConvertStatus(t *testing.T) {
 	test.Assert(t, convertStatus(nil).Code() == codes.OK)
 	test.Assert(t, convertStatus(errors.New("mock")).Code() == codes.Internal)
 	test.Assert(t, convertStatus(status.Err(100, "mock")).Code() == 100)
 	test.Assert(t, convertStatus(remote.NewTransErrorWithMsg(100, "mock")).Code() == 100)
 	test.Assert(t, convertStatus(kerrors.ErrInternalException).Code() == codes.Internal)
+	test.Assert(t, convertStatus(kerrors.ErrACL.WithCause(errors.New("mock"))).Code() == codes.PermissionDenied)
+	test.Assert(t, convertStatus(&mockError{}).Code() == codes.Internal)
 }
