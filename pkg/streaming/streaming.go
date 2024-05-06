@@ -21,7 +21,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
+	"github.com/cloudwego/kitex/pkg/streaming/metadata"
 )
 
 // Stream both client and server stream

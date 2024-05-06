@@ -228,6 +228,11 @@ type ProtobufMsgCodec interface {
 	Unmarshal(in []byte) error
 }
 
+type ProtobufV2MsgCodec interface {
+	XXX_Unmarshal(b []byte) error
+	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
+}
+
 func getValidData(methodName string, message remote.Message) (interface{}, error) {
 	if err := codec.NewDataIfNeeded(methodName, message); err != nil {
 		return nil, err

@@ -43,11 +43,6 @@ type marshaler interface {
 	Size() int
 }
 
-type protobufV2MsgCodec interface {
-	XXX_Unmarshal(b []byte) error
-	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
-}
-
 type grpcCodec struct {
 	ThriftCodec remote.PayloadCodec
 }
@@ -126,7 +121,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 			if _, err = t.MarshalTo(payload); err != nil {
 				return err
 			}
-		case protobufV2MsgCodec:
+		case protobuf.ProtobufV2MsgCodec:
 			payload, err = t.XXX_Marshal(nil, true)
 		case proto.Message:
 			payload, err = proto.Marshal(t)
@@ -171,32 +166,11 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 		return err
 	}
 	message.SetPayloadLen(len(d))
-	data := message.Data()
 	switch message.ProtocolInfo().CodecType {
 	case serviceinfo.Thrift:
 		return thrift.UnmarshalThriftData(ctx, c.ThriftCodec, "", d, message.Data())
 	case serviceinfo.Protobuf:
-		if t, ok := data.(fastpb.Reader); ok {
-			if len(d) == 0 {
-				// if all fields of a struct is default value, data will be nil
-				// In the implementation of fastpb, if data is nil, then fastpb will skip creating this struct, as a result user will get a nil pointer which is not expected.
-				// So, when data is nil, use default protobuf unmarshal method to decode the struct.
-				// todo: fix fastpb
-			} else {
-				_, err = fastpb.ReadMessage(d, fastpb.SkipTypeCheck, t)
-				return err
-			}
-		}
-		switch t := data.(type) {
-		case protobufV2MsgCodec:
-			return t.XXX_Unmarshal(d)
-		case proto.Message:
-			return proto.Unmarshal(d, t)
-		case protobuf.ProtobufMsgCodec:
-			return t.Unmarshal(d)
-		default:
-			return ErrInvalidPayload
-		}
+		return protobuf.UnmarshalProtobufData(ctx, message.Data(), d)
 	default:
 		return ErrInvalidPayload
 	}
