@@ -144,4 +144,6 @@ type ClientOption struct {
 	Option
 
 	EnableConnPoolReporter bool
+
+	TTHeaderStreamingWaitMetaFrame bool
 }

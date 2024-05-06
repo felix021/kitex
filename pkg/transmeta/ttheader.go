@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/kitex/pkg/kerrors"
@@ -61,7 +62,7 @@ func (ch *clientTTHeaderHandler) WriteMeta(ctx context.Context, msg remote.Messa
 		transmeta.FromService: ri.From().ServiceName(),
 		transmeta.FromMethod:  ri.From().Method(),
 		transmeta.ToService:   ri.To().ServiceName(),
-		transmeta.ToMethod:    ri.To().Method(),
+		transmeta.ToMethod:    toMethodName(ri),
 		transmeta.MsgType:     strconv.Itoa(int(msg.MessageType())),
 	}
 	if msg.ProtocolInfo().TransProto&transport.Framed == transport.Framed {
@@ -80,6 +81,24 @@ func (ch *clientTTHeaderHandler) WriteMeta(ctx context.Context, msg remote.Messa
 	return ctx, nil
 }
 
+// "$package.$service/$method"
+func toMethodName(ri rpcinfo.RPCInfo) string {
+	if ri.Config().InteractionMode() != rpcinfo.Streaming {
+		return ri.To().Method()
+	}
+	ivk := ri.Invocation()
+	sb := strings.Builder{}
+	sb.Grow(len(ivk.PackageName()) + 1 + len(ivk.ServiceName()) + 1 + len(ivk.MethodName()) + 1)
+	if ivk.PackageName() != "" {
+		sb.WriteString(ivk.PackageName())
+		sb.WriteByte('.')
+	}
+	sb.WriteString(ivk.ServiceName())
+	sb.WriteByte('/')
+	sb.WriteString(ivk.MethodName())
+	return sb.String()
+}
+
 // ReadMeta of clientTTHeaderHandler reads headers of TTHeader protocol from transport
 func (ch *clientTTHeaderHandler) ReadMeta(ctx context.Context, msg remote.Message) (context.Context, error) {
 	if !isTTHeader(msg) {
@@ -89,20 +108,26 @@ func (ch *clientTTHeaderHandler) ReadMeta(ctx context.Context, msg remote.Messag
 	transInfo := msg.TransInfo()
 	strInfo := transInfo.TransStrInfo()
 
-	if code, err := strconv.Atoi(strInfo[bizStatus]); err == nil && code != 0 {
-		if setter, ok := ri.Invocation().(rpcinfo.InvocationSetter); ok {
-			if bizExtra := strInfo[bizExtra]; bizExtra != "" {
-				extra, err := utils.JSONStr2Map(bizExtra)
-				if err != nil {
-					return ctx, fmt.Errorf("malformed header info, extra: %s", bizExtra)
-				}
-				setter.SetBizStatusErr(kerrors.NewBizStatusErrorWithExtra(int32(code), strInfo[bizMessage], extra))
-			} else {
-				setter.SetBizStatusErr(kerrors.NewBizStatusError(int32(code), strInfo[bizMessage]))
-			}
-		}
+	if err := ParseBizStatusErrorToRPCInfo(strInfo, ri.Invocation()); err != nil {
+		return nil, err
 	}
 	return ctx, nil
+}
+
+// ParseBizStatusErrorToRPCInfo parse biz status error from strInfo and set it to rpcinfo.Invocation
+func ParseBizStatusErrorToRPCInfo(strInfo map[string]string, invocation rpcinfo.Invocation) (err error) {
+	if code, err := strconv.Atoi(strInfo[bizStatus]); err == nil && code != 0 {
+		if setter, ok := invocation.(rpcinfo.InvocationSetter); ok {
+			var extra map[string]string
+			if bizExtra := strInfo[bizExtra]; bizExtra != "" {
+				if extra, err = utils.JSONStr2Map(bizExtra); err != nil {
+					return fmt.Errorf("malformed header info, extra: %s", bizExtra)
+				}
+			}
+			setter.SetBizStatusErr(kerrors.NewBizStatusErrorWithExtra(int32(code), strInfo[bizMessage], extra))
+		}
+	}
+	return nil
 }
 
 // serverTTHeaderHandler implement remote.MetaHandler
@@ -147,16 +172,19 @@ func (sh *serverTTHeaderHandler) WriteMeta(ctx context.Context, msg remote.Messa
 	strInfo := transInfo.TransStrInfo()
 
 	intInfo[transmeta.MsgType] = strconv.Itoa(int(msg.MessageType()))
-
-	if bizErr := ri.Invocation().BizStatusErr(); bizErr != nil {
-		strInfo[bizStatus] = strconv.Itoa(int(bizErr.BizStatusCode()))
-		strInfo[bizMessage] = bizErr.BizMessage()
-		if len(bizErr.BizExtra()) != 0 {
-			strInfo[bizExtra], _ = utils.Map2JSONStr(bizErr.BizExtra())
-		}
-	}
-
+	InjectBizStatusError(strInfo, ri.Invocation().BizStatusErr())
 	return ctx, nil
+}
+
+func InjectBizStatusError(strInfo map[string]string, bizErr kerrors.BizStatusErrorIface) {
+	if bizErr == nil {
+		return
+	}
+	strInfo[bizStatus] = strconv.Itoa(int(bizErr.BizStatusCode()))
+	strInfo[bizMessage] = bizErr.BizMessage()
+	if len(bizErr.BizExtra()) != 0 {
+		strInfo[bizExtra], _ = utils.Map2JSONStr(bizErr.BizExtra())
+	}
 }
 
 func isTTHeader(msg remote.Message) bool {

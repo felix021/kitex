@@ -19,9 +19,9 @@ package remotecli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/streaming"
 )
@@ -40,7 +40,18 @@ func NewStream(ctx context.Context, ri rpcinfo.RPCInfo, handler remote.ClientTra
 	if err != nil {
 		return nil, nil, err
 	}
-	return nphttp2.NewStream(ctx, opt.SvcInfo, rawConn, handler), &StreamConnManager{cm}, nil
+
+	allocator, ok := handler.(remote.ClientStreamAllocator)
+	if !ok {
+		err := fmt.Errorf("remote.ClientStreamAllocator is not implement by %T", handler)
+		return nil, nil, remote.NewTransError(remote.InternalError, err)
+	}
+
+	st, err := allocator.NewStream(ctx, opt.SvcInfo, rawConn, handler)
+	if err != nil {
+		return nil, nil, err
+	}
+	return st, &StreamConnManager{cm}, nil
 }
 
 // NewStreamConnManager returns a new StreamConnManager

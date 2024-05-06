@@ -22,7 +22,6 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/fastpb"
-
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/perrors"
@@ -226,6 +225,11 @@ type MessageReaderWithMethodWithContext interface {
 type ProtobufMsgCodec interface {
 	Marshal(out []byte) ([]byte, error)
 	Unmarshal(in []byte) error
+}
+
+type ProtobufV2MsgCodec interface {
+	XXX_Unmarshal(b []byte) error
+	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 }
 
 func getValidData(methodName string, message remote.Message) (interface{}, error) {
