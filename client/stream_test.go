@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"testing"
 
+	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
 	"github.com/golang/mock/gomock"
 
 	"github.com/cloudwego/kitex/internal/client"
@@ -102,6 +104,10 @@ func TestStreaming(t *testing.T) {
 	connpool := mock_remote.NewMockConnPool(ctrl)
 	connpool.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(conn, nil)
 	cliInfo.ConnPool = connpool
+	handler := new(mocks.MockCliTransHandler)
+	handler.NewStreamFunc = func(ctx context.Context, svcInfo *serviceinfo.ServiceInfo, conn net.Conn, handler remote.TransReadWriter) (streaming.Stream, error) {
+		return nphttp2.NewStream(ctx, svcInfo, conn, handler), nil
+	}
 	s, cr, _ := remotecli.NewStream(ctx, mockRPCInfo, new(mocks.MockCliTransHandler), cliInfo)
 	stream := newStream(
 		s, cr, kc, mockRPCInfo, serviceinfo.StreamingBidirectional,

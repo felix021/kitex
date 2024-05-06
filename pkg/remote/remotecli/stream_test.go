@@ -18,8 +18,12 @@ package remotecli
 
 import (
 	"context"
+	"net"
 	"testing"
 
+	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2"
+	kitex "github.com/cloudwego/kitex/pkg/serviceinfo"
+	"github.com/cloudwego/kitex/pkg/streaming"
 	"github.com/golang/mock/gomock"
 
 	"github.com/cloudwego/kitex/internal/mocks"
@@ -40,6 +44,9 @@ func TestNewStream(t *testing.T) {
 	ctx := rpcinfo.NewCtxWithRPCInfo(context.Background(), ri)
 
 	hdlr := &mocks.MockCliTransHandler{}
+	hdlr.NewStreamFunc = func(ctx context.Context, svcInfo *kitex.ServiceInfo, conn net.Conn, handler remote.TransReadWriter) (streaming.Stream, error) {
+		return nphttp2.NewStream(ctx, svcInfo, conn, handler), nil
+	}
 
 	opt := newMockOption(ctrl, addr)
 	opt.Option = remote.Option{

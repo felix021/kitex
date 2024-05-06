@@ -23,7 +23,11 @@ import (
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/klog"
 	"github.com/cloudwego/kitex/pkg/remote"
+	kitex "github.com/cloudwego/kitex/pkg/serviceinfo"
+	"github.com/cloudwego/kitex/pkg/streaming"
 )
+
+var _ remote.ClientStreamAllocator = (*MockCliTransHandler)(nil)
 
 type mockCliTransHandlerFactory struct {
 	hdlr *MockCliTransHandler
@@ -49,6 +53,12 @@ type MockCliTransHandler struct {
 	ReadFunc func(ctx context.Context, conn net.Conn, msg remote.Message) (nctx context.Context, err error)
 
 	OnMessageFunc func(ctx context.Context, args, result remote.Message) (context.Context, error)
+
+	NewStreamFunc func(ctx context.Context, svcInfo *kitex.ServiceInfo, conn net.Conn, handler remote.TransReadWriter) (streaming.Stream, error)
+}
+
+func (t *MockCliTransHandler) NewStream(ctx context.Context, svcInfo *kitex.ServiceInfo, conn net.Conn, handler remote.TransReadWriter) (streaming.Stream, error) {
+	return t.NewStreamFunc(ctx, svcInfo, conn, handler)
 }
 
 // Write implements the remote.TransHandler interface.

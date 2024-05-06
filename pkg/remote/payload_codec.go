@@ -23,13 +23,21 @@ import (
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 )
 
-var payloadCodecs = make(map[serviceinfo.PayloadCodec]PayloadCodec)
+var (
+	payloadCodecs = make(map[serviceinfo.PayloadCodec]PayloadCodec)
+)
 
 // PayloadCodec is used to marshal and unmarshal payload.
 type PayloadCodec interface {
 	Marshal(ctx context.Context, message Message, out ByteBuffer) error
 	Unmarshal(ctx context.Context, message Message, in ByteBuffer) error
 	Name() string
+}
+
+// SerDes is used to serialize and deserialize a given struct.
+type SerDes interface {
+	Serialize(ctx context.Context, data interface{}) ([]byte, error)
+	Deserialize(ctx context.Context, data interface{}, payload []byte) error
 }
 
 // GetPayloadCodec gets desired payload codec from message.
@@ -48,4 +56,14 @@ func GetPayloadCodec(message Message) (PayloadCodec, error) {
 // PutPayloadCode puts the desired payload codec to message.
 func PutPayloadCode(name serviceinfo.PayloadCodec, v PayloadCodec) {
 	payloadCodecs[name] = v
+}
+
+// GetSerDes gets desired payload serDes from message.
+func GetSerDes(message Message) (SerDes, error) {
+	if codec, err := GetPayloadCodec(message); err == nil {
+		if serDes := codec.(SerDes); serDes != nil {
+			return serDes, nil
+		}
+	}
+	return nil, fmt.Errorf("payload serdes not found with codecType=%v", message.ProtocolInfo().CodecType)
 }

@@ -18,12 +18,16 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync/atomic"
+	"time"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
+	"github.com/cloudwego/kitex/transport"
 
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/remote"
@@ -71,7 +75,7 @@ func (kc *kClient) invokeRecvEndpoint() endpoint.RecvEndpoint {
 }
 
 func (kc *kClient) invokeStreamingEndpoint() (endpoint.Endpoint, error) {
-	handler, err := kc.opt.RemoteOpt.CliHandlerFactory.NewTransHandler(kc.opt.RemoteOpt)
+	handler, err := kc.newStreamClientTransHandler()
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +99,15 @@ func (kc *kClient) invokeStreamingEndpoint() (endpoint.Endpoint, error) {
 		resp.(*streaming.Result).Stream = clientStream
 		return
 	}, nil
+}
+
+func (kc *kClient) newStreamClientTransHandler() (remote.ClientTransHandler, error) {
+	handlerFactory, ok := kc.opt.RemoteOpt.CliHandlerFactory.(remote.ClientStreamTransHandlerFactory)
+	if !ok {
+		return nil, fmt.Errorf("remote.ClientStreamTransHandlerFactory is not implement by %T",
+			kc.opt.RemoteOpt.CliHandlerFactory)
+	}
+	return handlerFactory.NewStreamTransHandler(kc.opt.RemoteOpt)
 }
 
 func (kc *kClient) getStreamingMode(ri rpcinfo.RPCInfo) serviceinfo.StreamingMode {
@@ -204,9 +217,51 @@ func (s *stream) DoFinish(err error) {
 		err = nil
 	}
 	if s.scm != nil {
-		s.scm.ReleaseConn(err, s.ri)
+		if s.ri.Config().TransportProtocol() == transport.TTHeader {
+			s.discardDirtyFrames(err)
+		} else {
+			s.scm.ReleaseConn(err, s.ri)
+		}
 	}
 	s.kc.opt.TracerCtl.DoFinish(s.Context(), s.ri, err)
+}
+
+// TTHeader Streaming does not multiplex a connection, so before release a connection for reuse, we need to
+// make sure there's no dirty frames left from the current stream
+func (s *stream) discardDirtyFrames(err error) {
+	if err != nil {
+		s.scm.ReleaseConn(err, s.ri)
+		return
+	}
+	gopool.Go(func() {
+		var finalErr error
+		defer func() {
+			if panicInfo := recover(); panicInfo != nil {
+				finalErr = kerrors.ErrPanic
+			}
+			s.scm.ReleaseConn(finalErr, s.ri)
+		}()
+		finished := make(chan struct{}, 1)
+		t := time.NewTimer(time.Second)
+		gopool.Go(func() {
+			defer func() {
+				if panicInfo := recover(); panicInfo != nil {
+					err = kerrors.ErrPanic
+				}
+				finished <- struct{}{}
+			}()
+			s.Trailer()                                 // will read until TrailerFrame or an error
+			if err = s.RecvMsg(nil); !isRPCError(err) { // check the last error
+				err = nil
+			}
+		})
+		select {
+		case <-t.C:
+			finalErr = kerrors.ErrRPCTimeout
+		case <-finished:
+			finalErr = err
+		}
+	})
 }
 
 func isRPCError(err error) bool {

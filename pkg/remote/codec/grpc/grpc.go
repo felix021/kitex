@@ -43,13 +43,10 @@ type marshaler interface {
 	Size() int
 }
 
-type protobufV2MsgCodec interface {
-	XXX_Unmarshal(b []byte) error
-	XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
-}
-
 type grpcCodec struct {
-	ThriftCodec remote.PayloadCodec
+	ThriftCodec     remote.PayloadCodec
+	thriftSerDes    remote.SerDes
+	protobufSerDesc remote.SerDes
 }
 
 type CodecOption func(c *grpcCodec)
@@ -69,6 +66,11 @@ func NewGRPCCodec(opts ...CodecOption) remote.Codec {
 	if !thrift.IsThriftCodec(codec.ThriftCodec) {
 		codec.ThriftCodec = thrift.NewThriftCodec()
 	}
+	// A better approach should be using remote.GetDerDes(message), but:
+	// 1. Get thriftCodec from client/server option with fastCodec/frugal config
+	// 2. protobufCodec is not compatible with current implementation of compression
+	codec.thriftSerDes = codec.ThriftCodec.(remote.SerDes)
+	codec.protobufSerDesc = protobuf.NewProtobufCodec().(remote.SerDes)
 	return codec
 }
 
@@ -99,7 +101,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 
 	switch message.ProtocolInfo().CodecType {
 	case serviceinfo.Thrift:
-		payload, err = thrift.MarshalThriftData(ctx, c.ThriftCodec, message.Data())
+		payload, err = c.thriftSerDes.Serialize(ctx, message.Data())
 	case serviceinfo.Protobuf:
 		switch t := message.Data().(type) {
 		case fastpb.Writer:
@@ -126,7 +128,7 @@ func (c *grpcCodec) Encode(ctx context.Context, message remote.Message, out remo
 			if _, err = t.MarshalTo(payload); err != nil {
 				return err
 			}
-		case protobufV2MsgCodec:
+		case protobuf.ProtobufV2MsgCodec:
 			payload, err = t.XXX_Marshal(nil, true)
 		case proto.Message:
 			payload, err = proto.Marshal(t)
@@ -171,32 +173,11 @@ func (c *grpcCodec) Decode(ctx context.Context, message remote.Message, in remot
 		return err
 	}
 	message.SetPayloadLen(len(d))
-	data := message.Data()
 	switch message.ProtocolInfo().CodecType {
 	case serviceinfo.Thrift:
-		return thrift.UnmarshalThriftData(ctx, c.ThriftCodec, "", d, message.Data())
+		return c.thriftSerDes.Deserialize(ctx, message.Data(), d)
 	case serviceinfo.Protobuf:
-		if t, ok := data.(fastpb.Reader); ok {
-			if len(d) == 0 {
-				// if all fields of a struct is default value, data will be nil
-				// In the implementation of fastpb, if data is nil, then fastpb will skip creating this struct, as a result user will get a nil pointer which is not expected.
-				// So, when data is nil, use default protobuf unmarshal method to decode the struct.
-				// todo: fix fastpb
-			} else {
-				_, err = fastpb.ReadMessage(d, fastpb.SkipTypeCheck, t)
-				return err
-			}
-		}
-		switch t := data.(type) {
-		case protobufV2MsgCodec:
-			return t.XXX_Unmarshal(d)
-		case proto.Message:
-			return proto.Unmarshal(d, t)
-		case protobuf.ProtobufMsgCodec:
-			return t.Unmarshal(d)
-		default:
-			return ErrInvalidPayload
-		}
+		return c.protobufSerDesc.Deserialize(ctx, message.Data(), d)
 	default:
 		return ErrInvalidPayload
 	}

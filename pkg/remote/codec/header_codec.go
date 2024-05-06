@@ -69,7 +69,7 @@ import (
 const (
 	// Header Magics
 	// 0 and 16th bits must be 0 to differentiate from framed & unframed
-	TTHeaderMagic     uint32 = 0x10000000
+	TTHeaderMagic     uint32 = 0x10000000 // magic(2 bytes) + flags(2 bytes)
 	MeshHeaderMagic   uint32 = 0xFFAF0000
 	MeshHeaderLenMask uint32 = 0x0000FFFF
 
@@ -87,10 +87,20 @@ const (
 	HeaderFlagSupportOutOfOrder HeaderFlags = 0x01
 	HeaderFlagDuplexReverse     HeaderFlags = 0x08
 	HeaderFlagSASL              HeaderFlags = 0x10
+	HeaderFlagsStreaming        HeaderFlags = 0b1000_0000_0000_0000
 )
 
 const (
 	TTHeaderMetaSize = 14
+)
+
+const (
+	FrameTypeMeta    = "1"
+	FrameTypeHeader  = "2"
+	FrameTypeData    = "3"
+	FrameTypeTrailer = "4"
+
+	StrKeyMetaData = "grpc-metadata"
 )
 
 // ProtocolID is the wrapped protocol id used in THeader.
@@ -102,6 +112,7 @@ const (
 	ProtocolIDThriftCompact   ProtocolID = 0x02 // Kitex not support
 	ProtocolIDThriftCompactV2 ProtocolID = 0x03 // Kitex not support
 	ProtocolIDKitexProtobuf   ProtocolID = 0x04
+	ProtocolIDNotSpecified    ProtocolID = 0xff
 	ProtocolIDDefault                    = ProtocolIDThriftBinary
 )
 
@@ -116,6 +127,18 @@ const (
 
 type ttHeader struct{}
 
+// EncodeHeader encodes the message as TTHeader format and writes it to out.
+// A prefixed 4-bytes is returned for the caller to write the frame size (after calculated the payload size).
+func (t ttHeader) EncodeHeader(ctx context.Context, message remote.Message, out remote.ByteBuffer) (totalLenField []byte, err error) {
+	return t.encode(ctx, message, out)
+}
+
+// DecodeHeader decodes the message from TTHeader format from in (including the 4-bytes frame size prefix).
+// PayloadLen is set to message for the caller to read the following payload.
+func (t ttHeader) DecodeHeader(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
+	return t.decode(ctx, message, in)
+}
+
 func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote.ByteBuffer) (totalLenField []byte, err error) {
 	// 1. header meta
 	var headerMeta []byte
@@ -126,7 +149,11 @@ func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote
 
 	totalLenField = headerMeta[0:4]
 	headerInfoSizeField := headerMeta[12:14]
-	binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic+uint32(getFlags(message)))
+	if message.MessageType() == remote.Stream {
+		binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic|uint32(HeaderFlagsStreaming))
+	} else {
+		binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic+uint32(getFlags(message)))
+	}
 	binary.BigEndian.PutUint32(headerMeta[8:12], uint32(message.RPCInfo().Invocation().SeqID()))
 
 	var transformIDs []uint8 // transformIDs not support TODO compress
@@ -161,7 +188,9 @@ func (t ttHeader) decode(ctx context.Context, message remote.Message, in remote.
 	if err != nil {
 		return perrors.NewProtocolError(err)
 	}
-	if !IsTTHeader(headerMeta) {
+	if message.MessageType() == remote.Stream && !IsTTHeaderStreaming(headerMeta) {
+		return perrors.NewProtocolErrorWithMsg("not TTHeader Streaming protocol")
+	} else if !IsTTHeader(headerMeta) {
 		return perrors.NewProtocolErrorWithMsg("not TTHeader protocol")
 	}
 	totalLen := Bytes2Uint32NoCheck(headerMeta[:Size32])
