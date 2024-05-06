@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/serviceinfo"
 )
 
 const (
@@ -114,4 +115,28 @@ func NewDataIfNeeded(method string, message remote.Message) error {
 		return nil
 	}
 	return remote.NewTransErrorWithMsg(remote.InternalError, "message data for codec is nil")
+}
+
+// ProtocolIDToPayloadCodec converts ProtocolID to PayloadCodec
+func ProtocolIDToPayloadCodec(p ProtocolID) serviceinfo.PayloadCodec {
+	switch p {
+	case ProtocolIDThriftBinary, ProtocolIDThriftCompact, ProtocolIDThriftCompactV2:
+		return serviceinfo.Thrift
+	case ProtocolIDKitexProtobuf:
+		return serviceinfo.Protobuf
+	default:
+		return serviceinfo.NotSpecified
+	}
+}
+
+// PayloadCodecToProtocolID converts PayloadCodec to ProtocolID
+func PayloadCodecToProtocolID(p serviceinfo.PayloadCodec) ProtocolID {
+	switch p {
+	case serviceinfo.Thrift:
+		return ProtocolIDThriftBinary
+	case serviceinfo.Protobuf:
+		return ProtocolIDKitexProtobuf
+	default:
+		return ProtocolIDNotSpecified
+	}
 }

@@ -144,4 +144,7 @@ type ClientOption struct {
 	Option
 
 	EnableConnPoolReporter bool
+
+	TTHeaderStreamingWaitMetaFrame  bool
+	TTHeaderStreamingGRPCCompatible bool // not enabled by default for performance issue
 }
