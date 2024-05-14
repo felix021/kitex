@@ -25,6 +25,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote"
 )
 
+const frameHeaderSize = 4
+
 // Frame is a framed message, including size, header and payload
 type Frame struct {
 	size    int

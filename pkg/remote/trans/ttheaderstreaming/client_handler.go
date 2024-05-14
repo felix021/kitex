@@ -30,6 +30,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/streaming"
 	"github.com/cloudwego/kitex/pkg/streaming/metadata"
 	header_transmeta "github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/transport"
 )
 
 var (
@@ -55,45 +56,46 @@ func (t *ttheaderStreamingClientTransHandler) NewStream(
 	ctx context.Context, svcInfo *kitex.ServiceInfo, conn net.Conn, handler remote.TransReadWriter,
 ) (streaming.Stream, error) {
 	ri := rpcinfo.GetRPCInfo(ctx)
-	sendMsg := newMessage(ri, ttheader.NewHeader())
+	sendMsg := remote.NewMessage(nil, svcInfo, ri, remote.Stream, remote.Server)
+	sendMsg.SetProtocolInfo(remote.NewProtocolInfo(transport.TTHeader, svcInfo.PayloadCodec))
 	ctx, err := header_transmeta.ClientTTHeaderHandler.WriteMeta(ctx, sendMsg)
 	if err != nil {
 		return nil, err
 	}
-	header := ttheader.NewHeaderWithInfo(sendMsg.TransInfo().TransIntInfo(), sendMsg.TransInfo().TransStrInfo())
-	header.SetStrInfo(appendMetaInfo(ctx, header.StrInfo()))
 
-	st := newTTHeaderStream(ctx, conn, ri, t.codec, header, remote.Client, t.ext)
+	st := newTTHeaderStream(ctx, conn, ri, t.codec, sendMsg, remote.Client, t.ext)
 
 	if md, ok := metadata.FromOutgoingContext(ctx); ok {
 		st.replaceHeader(md) // processed within ttheaderStreaming.sendHeader
 	}
 
-	// TODO: delay to the first SendMsg call? faster for creating a stream
+	// TODO: asynchronously send the header? faster for creating a stream
 	if err = st.sendHeader(); err != nil {
 		return nil, err
 	}
 
-	if err = t.readMetaFrameIfNecessary(ctx, st, ri); err != nil {
+	if err = t.readMetaFrameIfNecessary(st, ri); err != nil {
 		return nil, err
 	}
 	return st, nil
 }
 
-func (t *ttheaderStreamingClientTransHandler) readMetaFrameIfNecessary(ctx context.Context, st *ttheaderStream, ri rpcinfo.RPCInfo) (err error) {
+func (t *ttheaderStreamingClientTransHandler) readMetaFrameIfNecessary(st *ttheaderStream, ri rpcinfo.RPCInfo) error {
 	if t.opt.TTHeaderStreamingWaitMetaFrame {
 		// not enabled by default for performance (not necessary when mesh egress is not enabled).
 		return nil
 	}
-	f := ttheader.NewFrame(nil, nil)
-	err = st.skipFrameUntil(f, func(f *ttheader.Frame) bool {
+	message, err := st.skipFrameUntil(func(message remote.Message) bool {
 		// ignore possible dirty frames from previous stream on the same tcp connection
-		return f.Header().SeqNum() == uint32(ri.Invocation().SeqID())
+		return getSeqID(message) == ri.Invocation().SeqID()
 	})
-	if ft := frameType(f); ft != ttheader.FrameTypeMeta {
+	if err != nil {
+		return err
+	}
+	if ft := getFrameType(message); ft != ttheader.FrameTypeMeta {
 		return fmt.Errorf("unexpected frame type: expected=%v, got=%v", ttheader.FrameTypeMeta, ft)
 	}
-	return st.updateRPCInfoByMetaFrame(ctx, ri, f)
+	return st.parseMetaFrame(message)
 }
 
 func appendMetaInfo(ctx context.Context, metaInfos map[string]string) map[string]string {

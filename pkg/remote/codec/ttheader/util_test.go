@@ -565,3 +565,42 @@ func TestIsStreaming(t *testing.T) {
 		test.Assert(t, !IsStreaming(buf))
 	})
 }
+
+func TestParsePackageServiceMethod(t *testing.T) {
+	t.Run("normal", func(t *testing.T) {
+		p, s, m, err := ParsePackageServiceMethod("$package.$service/$method")
+		test.Assert(t, err == nil, err)
+		test.Assert(t, p == "$package", p)
+		test.Assert(t, s == "$service", s)
+		test.Assert(t, m == "$method", m)
+	})
+	t.Run("normal:dotted-pkg", func(t *testing.T) {
+		p, s, m, err := ParsePackageServiceMethod("a.b.c.$service/$method")
+		test.Assert(t, err == nil, err)
+		test.Assert(t, p == "a.b.c", p)
+		test.Assert(t, s == "$service", s)
+		test.Assert(t, m == "$method", m)
+	})
+	t.Run("normal:slash-prefixed", func(t *testing.T) {
+		p, s, m, err := ParsePackageServiceMethod("/$package.$service/$method")
+		test.Assert(t, err == nil, err)
+		test.Assert(t, p == "$package", p)
+		test.Assert(t, s == "$service", s)
+		test.Assert(t, m == "$method", m)
+	})
+	t.Run("normal:no-package", func(t *testing.T) {
+		p, s, m, err := ParsePackageServiceMethod("$service/$method")
+		test.Assert(t, err == nil, err)
+		test.Assert(t, p == "", p)
+		test.Assert(t, s == "$service", s)
+		test.Assert(t, m == "$method", m)
+	})
+	t.Run("error:no-service", func(t *testing.T) {
+		_, _, _, err := ParsePackageServiceMethod("$method")
+		test.Assert(t, err != nil, err)
+	})
+	t.Run("error:empty-string", func(t *testing.T) {
+		_, _, _, err := ParsePackageServiceMethod("")
+		test.Assert(t, err != nil, err)
+	})
+}

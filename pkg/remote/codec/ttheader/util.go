@@ -18,8 +18,10 @@ package ttheader
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
@@ -256,4 +258,32 @@ func writeAll(writer func([]byte) (int, error), buf []byte) error {
 		idx += n
 	}
 	return nil
+}
+
+// FrameType returns the frame type of the header; the default value is "trailer" if the key is not found.
+func FrameType(header *Header) string {
+	if ft, exists := header.GetIntKey(IntKeyFrameType); exists {
+		return ft
+	}
+	return FrameTypeTrailer
+}
+
+// ParsePackageServiceMethod parses the "$package.$service/$method" format
+func ParsePackageServiceMethod(s string) (string, string, string, error) {
+	if s != "" && s[0] == '/' {
+		s = s[1:]
+	}
+
+	pos := strings.LastIndex(s, "/")
+	if pos == -1 {
+		return "", "", "", fmt.Errorf("malformed $package.$service/$method format %q", s)
+	}
+	packageDotService, methodName := s[:pos], s[pos+1:]
+
+	if pos = strings.LastIndex(packageDotService, "."); pos == -1 { // package is not necessary
+		return "", packageDotService, methodName, nil
+	}
+
+	packageName, serviceName := packageDotService[:pos], packageDotService[pos+1:]
+	return packageName, serviceName, methodName, nil
 }

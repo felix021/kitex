@@ -35,7 +35,6 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote/codec/ttheader"
 	"github.com/cloudwego/kitex/pkg/remote/trans"
 	"github.com/cloudwego/kitex/pkg/remote/trans/detection"
-	"github.com/cloudwego/kitex/pkg/remote/transmeta"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 	"github.com/cloudwego/kitex/pkg/stats"
@@ -174,11 +173,11 @@ func (t *ttheaderStreamingTransHandler) finishTracer(ctx context.Context, ri rpc
 // OnRead handles a new TTHeader Stream
 func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Conn) (err error) {
 	ctx, ri := t.newCtxWithRPCInfo(ctx, conn)
-	headerFrame := ttheader.NewFrame(ttheader.NewHeader(), nil)
-	rawStream := newTTHeaderStream(ctx, conn, ri, t.codec, headerFrame.Header(), remote.Server, t.ext)
+	rawStream := newTTHeaderStream(ctx, conn, ri, t.codec, nil, remote.Server, t.ext)
 	st := endpoint.NewStreamWithMiddleware(rawStream, t.opt.RecvEndpoint, t.opt.SendEndpoint)
 
-	if err = rawStream.skipUntilTargetFrame(headerFrame, ttheader.FrameTypeHeader); err != nil {
+	var message remote.Message
+	if message, err = rawStream.readHeaderForServer(); err != nil {
 		if errors.Is(err, netpoll.ErrEOF) || errors.Is(err, io.EOF) {
 			// There could be dirty frames from the previous stream while the connection has been closed by the client.
 			// Just ignore the error since we're not starting a new stream at this moment.
@@ -190,7 +189,7 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 
 	ctx = rawStream.Context() // with cancel
 
-	if ctx, err = t.readMeta(ctx, conn, ri, headerFrame); err != nil {
+	if ctx, err = t.readMeta(ctx, conn, ri, message); err != nil {
 		t.OnError(ctx, err, conn)
 		return fmt.Errorf("KITEX: TTHeader Streaming readMeta failed, error=%v", err)
 	}
@@ -237,7 +236,7 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 	}
 
 	if sendErr := rawStream.sendTrailer(err); sendErr != nil {
-		t.OnError(ctx, err, conn)
+		t.OnError(ctx, sendErr, conn)
 		return sendErr
 	}
 
@@ -264,13 +263,8 @@ func (t *ttheaderStreamingTransHandler) newCtxWithRPCInfo(ctx context.Context, c
 }
 
 func (t *ttheaderStreamingTransHandler) readMeta(
-	ctx context.Context, conn net.Conn, ri rpcinfo.RPCInfo, headerFrame *ttheader.Frame,
+	ctx context.Context, conn net.Conn, ri rpcinfo.RPCInfo, message remote.Message,
 ) (nCtx context.Context, err error) {
-	message := newMessageFromHeaderFrame(ri, headerFrame)
-	if err = t.updateRPCInfo(ri, conn, headerFrame.Header()); err != nil {
-		return nil, err
-	}
-
 	// TODO: use MetaHandler.ReadMeta instead of calling directly ServerTTHeaderHandler.ReadMeta
 	// also for ServerTTHeaderHandler.WriteMeta
 	if ctx, err = header_transmeta.ServerTTHeaderHandler.ReadMeta(ctx, message); err != nil {
@@ -278,10 +272,10 @@ func (t *ttheaderStreamingTransHandler) readMeta(
 	}
 
 	// metainfo
-	ctx = metainfo.SetMetaInfoFromMap(ctx, headerFrame.Header().StrInfo())
+	ctx = metainfo.SetMetaInfoFromMap(ctx, message.TransInfo().TransStrInfo())
 
 	// grpc style metadata:
-	if ctx, err = injectGRPCMetadata(ctx, headerFrame.Header()); err != nil {
+	if ctx, err = injectGRPCMetadata(ctx, message.TransInfo().TransStrInfo()); err != nil {
 		return nil, fmt.Errorf("KITEX: TTHeader Streaming newCtxWithMetaData failed, error=%v", err)
 	}
 	return ctx, err
@@ -341,22 +335,4 @@ func (t *ttheaderStreamingTransHandler) retrieveServiceMethodInfo(ri rpcinfo.RPC
 		return nil, nil
 	}
 	return svcInfo, svcInfo.MethodInfo(method)
-}
-
-func (t *ttheaderStreamingTransHandler) updateRPCInfo(ri rpcinfo.RPCInfo, conn net.Conn, hdr *ttheader.Header) error {
-	serviceAndMethod, exists := hdr.GetIntKey(transmeta.ToMethod)
-	if !exists {
-		return errors.New("ToMethod not available in meta header")
-	}
-	packageName, serviceName, methodName, err := parsePackageServiceMethod(serviceAndMethod)
-	if err != nil {
-		return err
-	}
-
-	ink := ri.Invocation().(rpcinfo.InvocationSetter)
-	ink.SetSeqID(int32(hdr.SeqNum()))
-	ink.SetPackageName(packageName)
-	ink.SetServiceName(serviceName)
-	ink.SetMethodName(methodName)
-	return nil
 }
