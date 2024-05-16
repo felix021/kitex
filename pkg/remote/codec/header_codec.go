@@ -69,10 +69,9 @@ import (
 const (
 	// Header Magics
 	// 0 and 16th bits must be 0 to differentiate from framed & unframed
-	TTHeaderMagic       uint32 = 0x10000000 // magic(2 bytes) + flags(2 bytes)
-	TTHeaderMagicUint16 uint16 = 0x1000
-	MeshHeaderMagic     uint32 = 0xFFAF0000
-	MeshHeaderLenMask   uint32 = 0x0000FFFF
+	TTHeaderMagic     uint32 = 0x10000000 // magic(2 bytes) + flags(2 bytes)
+	MeshHeaderMagic   uint32 = 0xFFAF0000
+	MeshHeaderLenMask uint32 = 0x0000FFFF
 
 	// HeaderMask        uint32 = 0xFFFF0000
 	FlagsMask     uint32 = 0x0000FFFF
@@ -160,9 +159,6 @@ func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote
 }
 
 func (t ttHeader) decode(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
-	if err := skipTTHeaderStreamingFrames(ctx, message, in); err != nil {
-		return err
-	}
 	headerMeta, err := in.Next(TTHeaderMetaSize)
 	if err != nil {
 		return perrors.NewProtocolError(err)
@@ -211,33 +207,6 @@ func (t ttHeader) decode(ctx context.Context, message remote.Message, in remote.
 
 	message.SetPayloadLen(int(totalLen - uint32(headerInfoSize) + Size32 - TTHeaderMetaSize))
 	return err
-}
-
-// if the previous session is a ttheader streaming, it's possible that there are dirty frames which are not consumed by
-// the previous caller, so we should skip them until a non-streaming ttheader frame.
-func skipTTHeaderStreamingFrames(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
-	if message.RPCRole() == remote.Server {
-		return nil
-	}
-	for {
-		buf, err := in.Peek(2 * Size32)
-		if err != nil {
-			return err
-		}
-		if !isTTHeaderStreamingFrame(buf[Size32:]) {
-			return nil
-		}
-		size := binary.BigEndian.Uint32(buf[:Size32])
-		if _, err = in.Next(4 + int(size)); err != nil {
-			return err
-		}
-	}
-}
-
-// check by [TTHeader Magic] and [Flags with the streaming bit set]
-func isTTHeaderStreamingFrame(buf []byte) bool {
-	return binary.BigEndian.Uint16(buf) == TTHeaderMagicUint16 &&
-		binary.BigEndian.Uint16(buf[2:])&uint16(HeaderFlagsStreaming) != 0
 }
 
 func writeKVInfo(writtenSize int, message remote.Message, out remote.ByteBuffer) (writeSize int, err error) {

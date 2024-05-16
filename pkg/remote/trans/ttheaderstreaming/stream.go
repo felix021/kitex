@@ -252,16 +252,8 @@ func (t *ttheaderStream) readMessage(data interface{}) (message remote.Message, 
 		message = remote.NewMessage(data, nil, t.ri, remote.Stream, t.rpcRole)
 		bufReader := t.ext.NewReadByteBuffer(t.ctx, t.conn, message)
 		err = t.codec.Unmarshal(t.ctx, message, bufReader)
-		if t.shouldSkipDirtyFrameForClient(err) {
-			// client: dirty frames from previous stream, try next frame
-			continue
-		}
 		return message, err
 	}
-}
-
-func (t *ttheaderStream) shouldSkipDirtyFrameForClient(err error) bool {
-	return t.rpcRole == remote.Client && errors.Is(err, ttheader.ErrInvalidSeqID)
 }
 
 func (t *ttheaderStream) readUntilTargetFrame(data interface{}, targetType string) (message remote.Message, err error) {

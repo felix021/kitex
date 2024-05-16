@@ -34,6 +34,7 @@ import (
 
 var (
 	ErrInvalidPayload                     = errors.New("grpc invalid payload")
+	ErrInvalidSeqID                       = errors.New("ttheader streaming: client received frame with invalid seq id")
 	_                 remote.PayloadCodec = (*streamCodec)(nil)
 )
 
@@ -148,6 +149,8 @@ func (c *streamCodec) Unmarshal(ctx context.Context, message remote.Message, in 
 	}
 	if getFrameType(message.TransInfo().TransIntInfo()) != FrameTypeData {
 		return nil
+	} else if message.Data() == nil {
+		return nil // necessary for discarding dirty frames
 	}
 	// only data frame need to decode payload into message.Data()
 	payload = f.Payload()
@@ -160,8 +163,6 @@ func (c *streamCodec) Unmarshal(ctx context.Context, message remote.Message, in 
 		return ErrInvalidPayload
 	}
 }
-
-var ErrInvalidSeqID = errors.New("ttheader streaming: client received frame with invalid seq id")
 
 func (c *streamCodec) decodeIntoMessage(message remote.Message, f *Frame) (err error) {
 	header := f.Header()
