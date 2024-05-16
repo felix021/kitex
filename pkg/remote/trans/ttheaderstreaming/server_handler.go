@@ -34,7 +34,6 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/codec/ttheader"
 	"github.com/cloudwego/kitex/pkg/remote/trans"
-	"github.com/cloudwego/kitex/pkg/remote/trans/detection"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
 	"github.com/cloudwego/kitex/pkg/stats"
@@ -51,9 +50,8 @@ const (
 )
 
 var (
-	_ remote.ServerTransHandler              = (*ttheaderStreamingTransHandler)(nil)
-	_ remote.InvokeHandleFuncSetter          = (*ttheaderStreamingTransHandler)(nil)
-	_ detection.DetectableServerTransHandler = (*ttheaderStreamingTransHandler)(nil)
+	_ remote.ServerTransHandler     = (*ttheaderStreamingTransHandler)(nil)
+	_ remote.InvokeHandleFuncSetter = (*ttheaderStreamingTransHandler)(nil)
 
 	ErrNotTTHeaderStreaming = errors.New("not ttheader streaming")
 
