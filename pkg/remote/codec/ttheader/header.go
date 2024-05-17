@@ -21,8 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	"github.com/cloudwego/kitex/pkg/remote/codec"
 )
 
 const (
@@ -31,7 +29,7 @@ const (
 
 	FrameHeaderMagic uint16 = 0x1000
 
-	BitMaskIsStreaming = uint16(codec.HeaderFlagsStreaming)
+	BitMaskIsStreaming = 0b1000_0000_0000_0000
 
 	PaddingSize = 4
 
@@ -57,9 +55,8 @@ const (
 )
 
 var (
-	ErrMetaSizeTooLarge      = errors.New("meta size too large")
-	ErrInvalidMagic          = errors.New("invalid ttheader magic")
-	ErrTransformNotSupported = errors.New("transform not supported")
+	ErrMetaSizeTooLarge = errors.New("meta size too large")
+	ErrInvalidMagic     = errors.New("invalid ttheader magic")
 )
 
 type Header struct {
@@ -92,8 +89,8 @@ func (h *Header) Size() int {
 	return int(h.size)
 }
 
-func (h *Header) SetSize(size uint32) {
-	if size > uint32(uint16max) {
+func (h *Header) SetSize(size int) {
+	if size > uint16max {
 		panic(ErrMetaSizeTooLarge)
 	}
 	h.size = uint16(size)
@@ -121,6 +118,19 @@ func (h *Header) ProtocolID() uint8 {
 
 func (h *Header) SetProtocolID(protocolID uint8) {
 	h.protocolID = protocolID
+}
+
+func (h *Header) Transforms() []byte {
+	return h.transforms
+}
+
+func (h *Header) NTransforms() uint8 {
+	return h.nTransform
+}
+
+func (h *Header) SetTransforms(transforms []byte) {
+	h.nTransform = uint8(len(transforms))
+	h.transforms = transforms
 }
 
 func (h *Header) Token() string {
@@ -188,7 +198,7 @@ func (h *Header) Bytes() ([]byte, error) {
 func (h *Header) BytesLength() (int, error) {
 	size := OffsetVariable
 	if h.nTransform > 0 {
-		return 0, ErrTransformNotSupported
+		size += int(h.nTransform)
 	}
 	size += tokenSize(h.token) + intInfoSize(h.intInfo) + strInfoSize(h.strInfo)
 	size += paddingSize(size-OffsetProtocol, PaddingSize) // padding to multiple of 4, starting from protocolID
@@ -213,11 +223,12 @@ func (h *Header) WriteWithSize(buf []byte, bufSize int) error {
 	binary.BigEndian.PutUint16(buf[OffsetSize:OffsetSize+2],
 		uint16(bufSize-OffsetProtocol)/PaddingSize) // not including fixed fields (10 bytes)
 	buf[OffsetProtocol] = h.protocolID
-	if h.nTransform > 0 {
-		return ErrTransformNotSupported
-	}
 	buf[OffsetNTransform] = h.nTransform
-	return h.writeInfo(buf[OffsetVariable:bufSize])
+	offset := OffsetNTransform + 1
+	if h.nTransform > 0 {
+		offset += copy(buf[offset:], h.transforms)
+	}
+	return h.writeInfo(buf[offset:bufSize])
 }
 
 // Read decodes the ttheader from an io.Reader
@@ -235,11 +246,18 @@ func (h *Header) Read(input []byte) (err error) {
 	h.seqID = int32(binary.BigEndian.Uint32(buf[OffsetSeqID : OffsetSeqID+4]))
 	h.size = binary.BigEndian.Uint16(buf[OffsetSize:OffsetSize+2]) * PaddingSize // not including fixed fields
 	h.protocolID = buf[OffsetProtocol]
-	if h.nTransform = buf[OffsetNTransform]; h.nTransform > 0 {
-		return ErrTransformNotSupported
+	if err = h.readTransforms(buf[OffsetNTransform], reader); err != nil {
+		return err
 	}
-	varReader := newBytesReader(buf[OffsetProtocol+2 : OffsetProtocol+h.size])
+	offset := OffsetNTransform + 1 + int(h.nTransform)
+	varReader := newBytesReader(buf[offset : OffsetProtocol+h.size])
 	return h.readInfo(varReader)
+}
+
+func (h *Header) readTransforms(nTransform byte, reader *bytesReader) (err error) {
+	h.nTransform = nTransform
+	h.transforms, err = reader.ReadBytes(int(nTransform))
+	return err
 }
 
 func (h *Header) readInfo(reader *bytesReader) error {

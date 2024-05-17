@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/remote/codec/ttheader"
 
 	"github.com/cloudwego/kitex/internal/mocks"
 	"github.com/cloudwego/kitex/internal/test"
@@ -414,7 +415,7 @@ func (t ttHeader) encode2(ctx context.Context, message remote.Message, payloadBu
 	totalLenField := headerMeta[0:4]
 	headerSizeField := headerMeta[12:14]
 
-	binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic+uint32(getFlags(message)))
+	binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic+uint32(ttheader.GetFlags(message)))
 	binary.BigEndian.PutUint32(headerMeta[8:12], uint32(message.RPCInfo().Invocation().SeqID()))
 
 	var transformIDs []uint8
@@ -448,7 +449,7 @@ func (t ttHeader) encode2(ctx context.Context, message remote.Message, payloadBu
 	if headerInfo, err = out.Malloc(headerInfoSize); err != nil {
 		return perrors.NewProtocolError(err)
 	}
-	headerInfo[0] = byte(getProtocolID(message.ProtocolInfo()))
+	headerInfo[0] = byte(ttheader.GetProtocolID(message.ProtocolInfo()))
 	headerInfo[1] = byte(len(transformIDs))
 	hdIdx := 2
 	for tid := range transformIDs {
@@ -506,18 +507,18 @@ func TestHeaderFlags(t *testing.T) {
 	// case 1: correct HeaderFlags
 	msg := initClientSendMsg(transport.TTHeader)
 	msg.Tags()[HeaderFlagsKey] = HeaderFlagSASL | HeaderFlagSupportOutOfOrder
-	hfs := getFlags(msg)
+	hfs := ttheader.GetFlags(msg)
 	test.Assert(t, hfs == HeaderFlagSASL|HeaderFlagSupportOutOfOrder)
 
 	// case 2: invalid type for HeaderFlagsKey
 	msg = initClientSendMsg(transport.TTHeader)
 	msg.Tags()[HeaderFlagsKey] = 1
-	hfs = getFlags(msg)
+	hfs = ttheader.GetFlags(msg)
 	test.Assert(t, hfs == 0)
 
 	// case 3: setFlags then get Flags
 	msg = initClientSendMsg(transport.TTHeader)
-	setFlags(uint16(HeaderFlagSupportOutOfOrder), msg)
-	hfs = getFlags(msg)
+	ttheader.SetFlags(uint16(HeaderFlagSupportOutOfOrder), msg)
+	hfs = ttheader.GetFlags(msg)
 	test.Assert(t, hfs == HeaderFlagSupportOutOfOrder, hfs)
 }

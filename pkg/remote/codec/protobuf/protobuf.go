@@ -24,8 +24,12 @@ import (
 	"github.com/cloudwego/fastpb"
 
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/perrors"
+	codecutils "github.com/cloudwego/kitex/pkg/remote/codec/utils"
+)
+
+const (
+	metaInfoFixLen = 8
 )
 
 /**
@@ -40,10 +44,6 @@ import (
  *	|   							 													           |
  *	+----------------------------------------------------------------------------------------------+
  */
-
-const (
-	metaInfoFixLen = 8
-)
 
 // NewProtobufCodec ...
 func NewProtobufCodec() remote.PayloadCodec {
@@ -67,15 +67,15 @@ func (c protobufCodec) Marshal(ctx context.Context, message remote.Message, out 
 
 	// 3. encode metainfo
 	// 3.1 magic && msgType
-	if err := codec.WriteUint32(codec.ProtobufV1Magic+uint32(message.MessageType()), out); err != nil {
+	if err := codecutils.WriteUint32(codecutils.ProtobufV1Magic+uint32(message.MessageType()), out); err != nil {
 		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("protobuf marshal, write meta info failed: %s", err.Error()))
 	}
 	// 3.2 methodName
-	if _, err := codec.WriteString(methodName, out); err != nil {
+	if _, err := codecutils.WriteString(methodName, out); err != nil {
 		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("protobuf marshal, write method name failed: %s", err.Error()))
 	}
 	// 3.3 seqID
-	if err := codec.WriteUint32(uint32(message.RPCInfo().Invocation().SeqID()), out); err != nil {
+	if err := codecutils.WriteUint32(uint32(message.RPCInfo().Invocation().SeqID()), out); err != nil {
 		return perrors.NewProtocolErrorWithMsg(fmt.Sprintf("protobuf marshal, write seqID failed: %s", err.Error()))
 	}
 
@@ -129,30 +129,30 @@ func (c protobufCodec) Marshal(ctx context.Context, message remote.Message, out 
 
 func (c protobufCodec) Unmarshal(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
 	payloadLen := message.PayloadLen()
-	magicAndMsgType, err := codec.ReadUint32(in)
+	magicAndMsgType, err := codecutils.ReadUint32(in)
 	if err != nil {
 		return err
 	}
-	if magicAndMsgType&codec.MagicMask != codec.ProtobufV1Magic {
+	if magicAndMsgType&codecutils.MagicMask != codecutils.ProtobufV1Magic {
 		return perrors.NewProtocolErrorWithType(perrors.BadVersion, "Bad version in protobuf Unmarshal")
 	}
-	msgType := magicAndMsgType & codec.FrontMask
-	if err := codec.UpdateMsgType(msgType, message); err != nil {
+	msgType := magicAndMsgType & codecutils.FrontMask
+	if err := codecutils.UpdateMsgType(msgType, message); err != nil {
 		return err
 	}
 
-	methodName, methodFieldLen, err := codec.ReadString(in)
+	methodName, methodFieldLen, err := codecutils.ReadString(in)
 	if err != nil {
 		return perrors.NewProtocolErrorWithErrMsg(err, fmt.Sprintf("protobuf unmarshal, read method name failed: %s", err.Error()))
 	}
-	if err = codec.SetOrCheckMethodName(methodName, message); err != nil && msgType != uint32(remote.Exception) {
+	if err = codecutils.SetOrCheckMethodName(methodName, message); err != nil && msgType != uint32(remote.Exception) {
 		return err
 	}
-	seqID, err := codec.ReadUint32(in)
+	seqID, err := codecutils.ReadUint32(in)
 	if err != nil {
 		return perrors.NewProtocolErrorWithErrMsg(err, fmt.Sprintf("protobuf unmarshal, read seqID failed: %s", err.Error()))
 	}
-	if err = codec.SetOrCheckSeqID(int32(seqID), message); err != nil && msgType != uint32(remote.Exception) {
+	if err = codecutils.SetOrCheckSeqID(int32(seqID), message); err != nil && msgType != uint32(remote.Exception) {
 		return err
 	}
 	actualMsgLen := payloadLen - metaInfoFixLen - methodFieldLen
@@ -169,7 +169,7 @@ func (c protobufCodec) Unmarshal(ctx context.Context, message remote.Message, in
 		return remote.NewTransError(exception.TypeID(), &exception)
 	}
 
-	if err = codec.NewDataIfNeeded(methodName, message); err != nil {
+	if err = codecutils.NewDataIfNeeded(methodName, message); err != nil {
 		return err
 	}
 	data := message.Data()
@@ -234,7 +234,7 @@ type ProtobufV2MsgCodec interface {
 }
 
 func getValidData(methodName string, message remote.Message) (interface{}, error) {
-	if err := codec.NewDataIfNeeded(methodName, message); err != nil {
+	if err := codecutils.NewDataIfNeeded(methodName, message); err != nil {
 		return nil, err
 	}
 	data := message.Data()

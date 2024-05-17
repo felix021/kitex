@@ -22,11 +22,10 @@ import (
 	"fmt"
 
 	"github.com/apache/thrift/lib/go/thrift"
-
 	"github.com/cloudwego/kitex/pkg/protocol/bthrift"
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/perrors"
+	codecutils "github.com/cloudwego/kitex/pkg/remote/codec/utils"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/stats"
 )
@@ -178,7 +177,7 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 	if err != nil {
 		return perrors.NewProtocolErrorWithErrMsg(err, fmt.Sprintf("thrift unmarshal, ReadMessageBegin failed: %s", err.Error()))
 	}
-	if err = codec.UpdateMsgType(uint32(msgType), message); err != nil {
+	if err = codecutils.UpdateMsgType(uint32(msgType), message); err != nil {
 		return err
 	}
 
@@ -215,15 +214,15 @@ func (c thriftCodec) Unmarshal(ctx context.Context, message remote.Message, in r
 func validateMessageBeforeDecode(message remote.Message, seqID int32, methodName string) (err error) {
 	// For server side, the following error can be sent back and 'SetSeqID' should be executed first to ensure the seqID
 	// is right when return Exception back.
-	if err = codec.SetOrCheckSeqID(seqID, message); err != nil {
+	if err = codecutils.SetOrCheckSeqID(seqID, message); err != nil {
 		return err
 	}
 
-	if err = codec.SetOrCheckMethodName(methodName, message); err != nil {
+	if err = codecutils.SetOrCheckMethodName(methodName, message); err != nil {
 		return err
 	}
 
-	if err = codec.NewDataIfNeeded(methodName, message); err != nil {
+	if err = codecutils.NewDataIfNeeded(methodName, message); err != nil {
 		return err
 	}
 	return nil
@@ -261,7 +260,7 @@ type ThriftMsgFastCodec interface {
 }
 
 func getValidData(methodName string, message remote.Message) (interface{}, error) {
-	if err := codec.NewDataIfNeeded(methodName, message); err != nil {
+	if err := codecutils.NewDataIfNeeded(methodName, message); err != nil {
 		return nil, err
 	}
 	data := message.Data()

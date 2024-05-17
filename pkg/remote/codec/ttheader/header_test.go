@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/cloudwego/kitex/internal/test"
-	"github.com/cloudwego/kitex/pkg/remote/codec"
 )
 
 func TestNewHeaderWithInfo(t *testing.T) {
@@ -263,7 +262,7 @@ func TestHeader_readInfo(t *testing.T) {
 
 	t.Run("padding", func(t *testing.T) {
 		buf := make([]byte, 1)
-		buf[0] = byte(codec.InfoIDPadding)
+		buf[0] = InfoIDPadding
 
 		h := NewHeader()
 		err := h.readInfo(newBytesReader(buf))
@@ -324,16 +323,18 @@ func TestHeader_WriteWithSize(t *testing.T) {
 		test.Assert(t, err != nil)
 	})
 
-	t.Run("fixed+token", func(t *testing.T) {
+	t.Run("fixed+token+transforms", func(t *testing.T) {
 		h := NewHeader()
 		h.SetIsStreaming()
 		h.SetSeqID(0x12345678)
 		h.SetProtocolID(0x1)
 		h.SetToken("test")
+		transforms := []byte{0x1, 0x2, 0x3, 0x4}
+		h.SetTransforms(transforms)
 
 		bufSize, err := h.BytesLength()
 		test.Assert(t, err == nil, err)
-		test.Assert(t, bufSize == 22, bufSize)
+		test.Assert(t, bufSize == 22+len(transforms), bufSize)
 
 		buf := make([]byte, bufSize)
 		err = h.WriteWithSize(buf, bufSize)
@@ -344,18 +345,15 @@ func TestHeader_WriteWithSize(t *testing.T) {
 		test.Assert(t, binary.BigEndian.Uint32(buf[4:8]) == uint32(h.seqID), buf[4:8])
 		test.Assert(t, binary.BigEndian.Uint16(buf[8:10]) == uint16(bufSize-10)/PaddingSize, buf[8:10])
 		test.Assert(t, buf[OffsetProtocol] == h.protocolID, buf[OffsetProtocol])
-		test.Assert(t, buf[OffsetNTransform] == 0x00, buf[OffsetNTransform:]) // nTransform: not supported yet
-		test.Assert(t, buf[OffsetVariable] == InfoIDACLToken, buf[OffsetVariable])
-		test.Assert(t, binary.BigEndian.Uint16(buf[13:15]) == uint16(len("test")), buf[13:15])
-		test.Assert(t, string(buf[15:19]) == "test", buf[15:19])
-	})
-
-	t.Run("nTransport", func(t *testing.T) {
-		h := NewHeader()
-		h.nTransform = 1
-		buf := make([]byte, 100)
-		err := h.WriteWithSize(buf, 14)
-		test.Assert(t, err != nil, err)
+		test.Assert(t, buf[OffsetNTransform] == byte(len(transforms)), buf[OffsetNTransform:])
+		gotTransforms := buf[OffsetNTransform+1 : OffsetNTransform+1+len(transforms)]
+		test.Assert(t, reflect.DeepEqual(gotTransforms, transforms), gotTransforms)
+		offset := OffsetNTransform + 1 + len(transforms) // nTransform + transforms
+		test.Assert(t, buf[offset] == InfoIDACLToken, buf[offset])
+		offset += 1 // infoID
+		test.Assert(t, binary.BigEndian.Uint16(buf[offset:offset+2]) == uint16(len("test")), buf[offset:offset+2])
+		offset += 2 // size
+		test.Assert(t, string(buf[offset:offset+4]) == "test", buf[offset+2:])
 	})
 }
 
@@ -382,9 +380,10 @@ func TestHeader_BytesLength(t *testing.T) {
 	})
 	t.Run("nTransform", func(t *testing.T) {
 		h := NewHeader()
-		h.nTransform = 1
-		_, err := h.BytesLength()
-		test.Assert(t, err != nil, err)
+		h.SetTransforms([]byte{0x1, 0x2, 0x3, 0x4})
+		size, err := h.BytesLength()
+		test.Assert(t, err == nil, err)
+		test.Assert(t, size == 18, size)
 	})
 }
 
@@ -433,12 +432,14 @@ func TestHeader_Read(t *testing.T) {
 		test.Assert(t, errors.Is(err, ErrInvalidMagic), err)
 	})
 
-	t.Run("fixed+token", func(t *testing.T) {
+	t.Run("fixed+token+transforms", func(t *testing.T) {
 		hw := NewHeader()
 		hw.SetIsStreaming()
 		hw.SetSeqID(0x12345678)
 		hw.SetProtocolID(0x1)
 		hw.SetToken("test")
+		transforms := []byte{0x1, 0x2, 0x3, 0x4}
+		hw.SetTransforms(transforms)
 		buf, err := hw.Bytes()
 		test.Assert(t, err == nil, err)
 
@@ -450,17 +451,6 @@ func TestHeader_Read(t *testing.T) {
 		test.Assert(t, hr.protocolID == hw.protocolID, hr.protocolID)
 		test.Assert(t, hr.nTransform == hw.nTransform, hr.nTransform)
 		test.Assert(t, hr.Token() == hw.Token(), hr.Token())
-		test.Assert(t, hr.Size() == 12, hr.Size()) // protocol(1) + nTransform(1) + token(7) + padding(3)
-	})
-
-	t.Run("nTransport", func(t *testing.T) {
-		hw := NewHeader()
-		buf, err := hw.Bytes()
-		test.Assert(t, err == nil, err)
-		buf[OffsetNTransform] = 1 // nTransport
-
-		hr := NewHeader()
-		err = hr.Read(buf)
-		test.Assert(t, err != nil, err)
+		test.Assert(t, hr.Size() == 12+len(transforms), hr.Size()) // protocol(1) + transform(5=1+len(transforms)) + token(7) + padding(3)
 	})
 }

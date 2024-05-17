@@ -25,6 +25,8 @@ import (
 	"github.com/cloudwego/kitex/pkg/kerrors"
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/codec/perrors"
+	"github.com/cloudwego/kitex/pkg/remote/codec/ttheader"
+	codecutils "github.com/cloudwego/kitex/pkg/remote/codec/utils"
 	"github.com/cloudwego/kitex/pkg/retry"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/serviceinfo"
@@ -41,14 +43,16 @@ const (
 	// ThriftV1Magic is the magic code for thrift.VERSION_1
 	ThriftV1Magic = 0x80010000
 	// ProtobufV1Magic is the magic code for kitex protobuf
-	ProtobufV1Magic = 0x90010000
+	ProtobufV1Magic = codecutils.ProtobufV1Magic
 
 	// MagicMask is bit mask for checking version.
-	MagicMask = 0xffff0000
+	MagicMask = codecutils.MagicMask
 )
 
 var (
-	ttHeaderCodec   = ttHeader{}
+	ttHeaderCodec = ttHeader{
+		codec: ttheader.NewTTHeader(),
+	}
 	meshHeaderCodec = meshHeader{}
 
 	_ remote.Codec       = (*defaultCodec)(nil)

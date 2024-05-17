@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/transmeta"
+	"github.com/cloudwego/kitex/pkg/serviceinfo"
 )
 
 func readIntKVInfo(reader *bytesReader) (map[uint16]string, error) {
@@ -300,3 +301,29 @@ func ParsePackageServiceMethod(s string) (string, string, string, error) {
 	packageName, serviceName := packageDotService[:pos], packageDotService[pos+1:]
 	return packageName, serviceName, methodName, nil
 }
+
+// ProtocolIDToPayloadCodec converts ProtocolID to PayloadCodec
+func ProtocolIDToPayloadCodec(p ProtocolID) serviceinfo.PayloadCodec {
+	switch p {
+	case ProtocolIDThriftBinary, ProtocolIDThriftCompact, ProtocolIDThriftCompactV2:
+		return serviceinfo.Thrift
+	case ProtocolIDKitexProtobuf:
+		return serviceinfo.Protobuf
+	default:
+		return serviceinfo.NotSpecified
+	}
+}
+
+// PayloadCodecToProtocolID converts PayloadCodec to ProtocolID
+func PayloadCodecToProtocolID(p serviceinfo.PayloadCodec) ProtocolID {
+	switch p {
+	case serviceinfo.Thrift:
+		return ProtocolIDThriftBinary
+	case serviceinfo.Protobuf:
+		return ProtocolIDKitexProtobuf
+	default:
+		return ProtocolIDNotSpecified
+	}
+}
+
+// SetOrCheckSeqID is used to check the sequence ID.

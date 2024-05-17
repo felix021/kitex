@@ -553,7 +553,7 @@ func TestIsStreaming(t *testing.T) {
 	t.Run("normal:true", func(t *testing.T) {
 		flags := BitMaskIsStreaming
 		buf := []byte{0, 0}
-		binary.BigEndian.PutUint16(buf, flags)
+		binary.BigEndian.PutUint16(buf, uint16(flags))
 		test.Assert(t, IsStreaming(buf))
 	})
 	t.Run("normal:false", func(t *testing.T) {

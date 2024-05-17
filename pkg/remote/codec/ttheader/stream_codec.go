@@ -22,7 +22,6 @@ import (
 	"errors"
 
 	"github.com/cloudwego/kitex/pkg/remote"
-	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/protobuf"
 	"github.com/cloudwego/kitex/pkg/remote/codec/thrift"
 	"github.com/cloudwego/kitex/pkg/remote/transmeta"
@@ -80,7 +79,7 @@ func (c *streamCodec) Marshal(ctx context.Context, message remote.Message, out r
 	header := NewHeaderWithInfo(message.TransInfo().TransIntInfo(), message.TransInfo().TransStrInfo())
 	header.SetIsStreaming()
 	header.SetSeqID(message.RPCInfo().Invocation().SeqID())
-	header.SetProtocolID(byte(codec.PayloadCodecToProtocolID(message.ProtocolInfo().CodecType)))
+	header.SetProtocolID(byte(PayloadCodecToProtocolID(message.ProtocolInfo().CodecType)))
 	if token, exists := message.TransInfo().TransStrInfo()[transmeta.GDPRToken]; exists {
 		header.SetToken(token)
 	}
@@ -172,14 +171,14 @@ func (c *streamCodec) decodeIntoMessage(message remote.Message, f *Frame) (err e
 	message.SetPayloadLen(len(f.Payload()))
 	message.SetProtocolInfo(remote.NewProtocolInfo(
 		transport.TTHeader, // ttheader streaming
-		codec.ProtocolIDToPayloadCodec(codec.ProtocolID(header.ProtocolID())),
+		ProtocolIDToPayloadCodec(ProtocolID(header.ProtocolID())),
 	))
 	message.TransInfo().PutTransIntInfo(header.IntInfo())
 	message.TransInfo().PutTransStrInfo(header.StrInfo())
 	if t := header.Token(); len(t) != 0 {
 		message.TransInfo().TransStrInfo()[transmeta.GDPRToken] = t
 	}
-	codec.FillBasicInfoOfTTHeader(message)
+	FillBasicInfoOfTTHeader(message)
 	switch FrameType(header) {
 	case FrameTypeHeader:
 		return c.updateRPCInfoFromHeaderFrame(message, header)
