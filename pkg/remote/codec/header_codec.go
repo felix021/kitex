@@ -88,6 +88,7 @@ const (
 	HeaderFlagDuplexReverse     HeaderFlags = 0x08
 	HeaderFlagSASL              HeaderFlags = 0x10
 	HeaderFlagsStreaming        HeaderFlags = 0b1000_0000_0000_0000
+	HeaderFlagsStreamingTrailer HeaderFlags = 0b0100_0000_0000_0000
 )
 
 const (
@@ -149,11 +150,11 @@ func (t ttHeader) encode(ctx context.Context, message remote.Message, out remote
 
 	totalLenField = headerMeta[0:4]
 	headerInfoSizeField := headerMeta[12:14]
+	magic := TTHeaderMagic | uint32(getFlags(message))
 	if message.MessageType() == remote.Stream {
-		binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic|uint32(HeaderFlagsStreaming))
-	} else {
-		binary.BigEndian.PutUint32(headerMeta[4:8], TTHeaderMagic+uint32(getFlags(message)))
+		magic |= uint32(HeaderFlagsStreaming)
 	}
+	binary.BigEndian.PutUint32(headerMeta[4:8], magic)
 	binary.BigEndian.PutUint32(headerMeta[8:12], uint32(message.RPCInfo().Invocation().SeqID()))
 
 	var transformIDs []uint8 // transformIDs not support TODO compress

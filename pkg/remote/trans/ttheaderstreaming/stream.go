@@ -18,6 +18,7 @@ package ttheaderstreaming
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -28,49 +29,66 @@ import (
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/kitex/pkg/gofunc"
+	"github.com/cloudwego/kitex/pkg/klog"
+	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/codec"
 	"github.com/cloudwego/kitex/pkg/remote/codec/ttheader"
-	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
-
-	"github.com/cloudwego/kitex/pkg/gofunc"
-	"github.com/cloudwego/kitex/pkg/remote"
 	"github.com/cloudwego/kitex/pkg/remote/trans"
+	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	remote_transmeta "github.com/cloudwego/kitex/pkg/remote/transmeta"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/netpoll"
 )
 
 const (
 	sent     = 1
 	received = 1
 	closed   = 1
+
+	initialReceivedChanSize = 16
+	initialSendChanSize     = 16
 )
 
 var (
 	ErrIllegalHeaderWrite = errors.New("ttheader streaming: the stream is done or headers was already sent")
+	ErrInvalidFrame       = errors.New("ttheader streaming: invalid frame")
 	ErrSendClosed         = errors.New("ttheader streaming: send closed")
 	ErrDirtyFrame         = errors.New("ttheader streaming: dirty frame")
+
+	idAllocator = uint64(0)
 )
 
 func newTTHeaderStream(
 	ctx context.Context, conn net.Conn, ri rpcinfo.RPCInfo, codec remote.PayloadCodec,
-	header remote.Message, role remote.RPCRole, ext trans.Extension,
+	clientHeader remote.Message, role remote.RPCRole, ext trans.Extension,
 ) *ttheaderStream {
 	ctx, cancel := context.WithCancel(ctx)
 	st := &ttheaderStream{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		ri:          ri,
-		codec:       codec,
-		headerFrame: header, // ttheader from/for HeaderFrame
-		rpcRole:     role,
-		ext:         ext,
+		id:           atomic.AddUint64(&idAllocator, 1),
+		ctx:          ctx,
+		cancel:       cancel,
+		conn:         conn,
+		ri:           ri,
+		codec:        codec,
+		clientHeader: clientHeader, // ttheader from/for HeaderFrame
+		rpcRole:      role,
+		ext:          ext,
+
+		receiveQueue: make(chan []byte, initialReceivedChanSize),
+		sendQueue:    make(chan remote.Message, initialSendChanSize),
 	}
+	if clientHeader != nil {
+		st.protocolInfo = clientHeader.ProtocolInfo() // for creating following frames
+	}
+	gofunc.GoFunc(ctx, st.frameReceiver)
+	gofunc.GoFunc(ctx, st.messageSender)
 	return st
 }
 
 type ttheaderStream struct {
+	id     uint64
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -80,7 +98,7 @@ type ttheaderStream struct {
 	ext   trans.Extension
 
 	rpcRole         remote.RPCRole
-	headerFrame     remote.Message
+	clientHeader    remote.Message
 	headerFrameSent uint32
 
 	// grpc style metadata for compatibility: send (for server)
@@ -89,15 +107,28 @@ type ttheaderStream struct {
 	trailerToSend metadata.MD
 
 	// grpc style metadata for compatibility: recv (for client)
-	headersRecv     metadata.MD
 	headerReceived  uint32
-	trailerRecv     metadata.MD
+	headersRecv     metadata.MD
 	trailerReceived uint32
+	trailerRecv     metadata.MD
 
+	recvState state
+
+	recvClosed    uint32
 	lastRecvError error
 
-	recvClosed uint32
-	sendClosed uint32
+	sendClosed    uint32
+	lastSendError error
+
+	// receiveQueue is a channel of byte slice since we need to decode the frame directly into the struct
+	// created by the `xxxClient.Recv()` (in kitex_gen: xxx-service/client.go)
+	receiveQueue chan []byte
+
+	// sendQueue is a channel of remote.Message since we need to write the frame directly to the output stream,
+	// to make full use of the no-copy feature provided by netpoll.
+	sendQueue chan remote.Message
+
+	protocolInfo remote.ProtocolInfo
 }
 
 // SetHeader implements streaming.Stream
@@ -147,9 +178,13 @@ func (t *ttheaderStream) sendHeaderFrame() (err error) {
 	return t.sendFrameWithMetaData(codec.FrameTypeHeader, nil)
 }
 
-func (t *ttheaderStream) sendTrailer(invokeErr error) error {
+func (t *ttheaderStream) serverSendTrailer(invokeErr error) error {
 	if t.isSendClosed() {
 		return nil
+	}
+	if err := t.sendHeaderFrame(); err != nil {
+		// make sure HeaderFrame is always sent before any frame
+		return err
 	}
 	return t.sendFrameWithMetaData(codec.FrameTypeTrailer, invokeErr)
 }
@@ -161,10 +196,7 @@ func (t *ttheaderStream) sendTrailer(invokeErr error) error {
 // - BizStatusError (in strInfo keys "biz-status", "biz-message" and "biz-extra")
 // - (data) the invokeErr returned by method handler (in payload, serialized as a TApplicationException)
 func (t *ttheaderStream) sendFrameWithMetaData(frameType string, invokeErr error) (err error) {
-	message, needRecycle := t.newMessageToSend(invokeErr, frameType)
-	if needRecycle {
-		defer message.Recycle()
-	}
+	message := t.newMessageToSend(invokeErr, frameType)
 	var metadataJSON []byte
 	if frameType == codec.FrameTypeHeader {
 		metadataJSON, err = t.getMetaDataAsJSON(&t.headersToSend)
@@ -174,6 +206,7 @@ func (t *ttheaderStream) sendFrameWithMetaData(frameType string, invokeErr error
 		} else {
 			transmeta.InjectBizStatusError(message.TransInfo().TransStrInfo(), t.ri.Invocation().BizStatusErr())
 		}
+		message.Tags()[codec.HeaderFlagsKey] = codec.HeaderFlagsStreamingTrailer
 		metadataJSON, err = t.getMetaDataAsJSON(&t.trailerToSend)
 	}
 	if err != nil {
@@ -182,15 +215,18 @@ func (t *ttheaderStream) sendFrameWithMetaData(frameType string, invokeErr error
 	if len(metadataJSON) > 0 {
 		message.TransInfo().TransStrInfo()[codec.StrKeyMetaData] = string(metadataJSON)
 	}
-	return t.sendMessage(message)
+	return t.putMessageToSendQueue(message)
 }
 
-func (t *ttheaderStream) sendMessage(message remote.Message) error {
-	out := t.ext.NewWriteByteBuffer(t.ctx, t.conn, message)
-	if err := t.codec.Marshal(t.ctx, message, out); err != nil {
+func (t *ttheaderStream) putMessageToSendQueue(message remote.Message) error {
+	select {
+	case <-t.ctx.Done():
+		err := t.ctx.Err()
+		t.closeSend(err)
 		return err
+	case t.sendQueue <- message:
+		return nil
 	}
-	return out.Flush()
 }
 
 // getMetaDataAsJSON minimizes critical section on metadataMutex
@@ -216,8 +252,8 @@ func (t *ttheaderStream) SetTrailer(md metadata.MD) {
 }
 
 func (t *ttheaderStream) Header() (metadata.MD, error) {
-	if t.rpcRole == remote.Server {
-		panic("this method should only be used in client side stream!")
+	if t.rpcRole != remote.Client {
+		panic("Header() should only be used in client side stream!")
 	}
 	if old := atomic.SwapUint32(&t.headerReceived, received); old != received {
 		if _, err := t.readUntilTargetFrame(nil, codec.FrameTypeHeader); err != nil {
@@ -228,13 +264,14 @@ func (t *ttheaderStream) Header() (metadata.MD, error) {
 }
 
 func (t *ttheaderStream) Trailer() metadata.MD {
-	if t.rpcRole == remote.Server {
-		panic("this method should only be used in client side stream!")
+	if t.rpcRole != remote.Client {
+		panic("Trailer() should only be used in client side stream!")
 	}
 	if old := atomic.SwapUint32(&t.trailerReceived, received); old != received {
 		_, _ = t.readUntilTargetFrame(nil, codec.FrameTypeTrailer)
 	}
 	return t.trailerRecv
+
 }
 
 func (t *ttheaderStream) Context() context.Context {
@@ -253,11 +290,19 @@ func (t *ttheaderStream) readMessage(data interface{}) (message remote.Message, 
 	if t.isRecvClosed() {
 		return nil, t.lastRecvError
 	}
-	for {
+	select {
+	case <-t.ctx.Done():
+		return nil, t.ctx.Err()
+	case frame, ok := <-t.receiveQueue:
+		if !ok {
+			return nil, io.EOF
+		}
 		message = remote.NewMessage(data, nil, t.ri, remote.Stream, t.rpcRole)
-		bufReader := t.ext.NewReadByteBuffer(t.ctx, t.conn, message)
-		err = t.codec.Unmarshal(t.ctx, message, bufReader)
-		return message, err
+		if err = t.codec.Unmarshal(t.ctx, message, remote.NewReaderBuffer(frame)); err != nil {
+			message.Recycle()
+			return nil, err
+		}
+		return message, nil
 	}
 }
 
@@ -278,6 +323,9 @@ func (t *ttheaderStream) readUntilTargetFrame(data interface{}, targetType strin
 				return nil, err
 			}
 		case codec.FrameTypeData:
+			if oldState, allow := t.recvState.setDataReceived(); !allow {
+				return nil, fmt.Errorf("unexpected data frame, old recvState = %v", oldState)
+			}
 		case codec.FrameTypeTrailer:
 			return message, t.parseTrailerFrame(message) // last frame of the stream
 		default:
@@ -287,6 +335,12 @@ func (t *ttheaderStream) readUntilTargetFrame(data interface{}, targetType strin
 			return message, nil
 		}
 	}
+}
+
+func (t *ttheaderStream) clientReadMetaFrame() error {
+	message, err := t.readUntilTargetFrame(nil, codec.FrameTypeMeta)
+	message.Recycle()
+	return err
 }
 
 // skipFrameUntil discards frames until the given condition is met
@@ -302,16 +356,21 @@ func (t *ttheaderStream) skipFrameUntil(expected func(remote.Message) bool) (mes
 	}
 }
 
-func (t *ttheaderStream) readHeaderForServer(opt *remote.ServerOption) (nCtx context.Context, err error) {
-	if t.headerFrame, err = t.readMessage(nil); err != nil {
+func (t *ttheaderStream) serverReadHeader(opt *remote.ServerOption) (nCtx context.Context, err error) {
+	if t.clientHeader, err = t.readMessage(nil); err != nil {
 		return nil, err
-	} else if codec.MessageFrameType(t.headerFrame) != codec.FrameTypeHeader {
+	} else if codec.MessageFrameType(t.clientHeader) != codec.FrameTypeHeader {
 		return nil, ErrDirtyFrame
+	}
+	if old, allow := t.recvState.setHeaderReceived(); !allow {
+		return nil, fmt.Errorf("unexpected header frame, old recvState = %d", old)
 	}
 
 	if nCtx, err = t.readMetaFromHeaderFrame(opt); err != nil {
 		return nil, err
 	}
+
+	t.protocolInfo = t.clientHeader.ProtocolInfo()
 
 	nCtx = opt.TracerCtl.DoStart(nCtx, t.ri)
 
@@ -322,16 +381,16 @@ func (t *ttheaderStream) readHeaderForServer(opt *remote.ServerOption) (nCtx con
 func (t *ttheaderStream) readMetaFromHeaderFrame(opt *remote.ServerOption) (nCtx context.Context, err error) {
 	nCtx = t.ctx // with cancel
 	if serverHeaderFrameHandler != nil {
-		if nCtx, err = serverHeaderFrameHandler.ReadMeta(nCtx, t.headerFrame); err != nil {
+		if nCtx, err = serverHeaderFrameHandler.ReadMeta(nCtx, t.clientHeader); err != nil {
 			return nil, err
 		}
 	}
 
 	// metainfo
-	nCtx = metainfo.SetMetaInfoFromMap(nCtx, t.headerFrame.TransInfo().TransStrInfo())
+	nCtx = metainfo.SetMetaInfoFromMap(nCtx, t.clientHeader.TransInfo().TransStrInfo())
 
 	// grpc style metadata:
-	if nCtx, err = injectGRPCMetadata(nCtx, t.headerFrame.TransInfo().TransStrInfo()); err != nil {
+	if nCtx, err = injectGRPCMetadata(nCtx, t.clientHeader.TransInfo().TransStrInfo()); err != nil {
 		return nil, err
 	}
 
@@ -350,6 +409,14 @@ func (t *ttheaderStream) parseMetaFrame(message remote.Message) (err error) {
 			t.closeRecv(err)
 		}
 	}()
+	if oldState, allow := t.recvState.setMetaReceived(); !allow {
+		return fmt.Errorf("unexpected meta frame, old recvState = %d", oldState)
+	}
+
+	if t.rpcRole != remote.Client {
+		return ErrInvalidFrame
+	}
+
 	if clientMetaFrameHandler == nil {
 		return nil
 	}
@@ -363,13 +430,16 @@ func (t *ttheaderStream) parseHeaderFrame(message remote.Message) (err error) {
 			t.closeRecv(err)
 		}
 	}()
+	if oldState, allow := t.recvState.setHeaderReceived(); !allow {
+		return fmt.Errorf("unexpected header frame, old recvState = %d", oldState)
+	}
 	if t.rpcRole == remote.Client {
 		if _, err = clientHeaderFrameHandler.ReadMeta(t.ctx, message); err != nil {
 			return err
 		}
 		return t.parseGRPCMetadata(message, &t.headersRecv)
 	} else {
-		// server: HeaderFrame is already processed in readHeaderForServer
+		// server: HeaderFrame is already processed in serverReadHeader
 		return nil
 	}
 }
@@ -381,6 +451,9 @@ func (t *ttheaderStream) parseTrailerFrame(message remote.Message) (err error) {
 		}
 		t.closeRecv(err)
 	}()
+	if oldState, allow := t.recvState.setTrailerReceived(); !allow {
+		return fmt.Errorf("unexpected trailer frame, old recvState = %d", oldState)
+	}
 	return t.parseGRPCMetadata(message, &t.trailerRecv)
 }
 
@@ -402,26 +475,14 @@ func (t *ttheaderStream) RecvMsg(m interface{}) error {
 	if t.isRecvClosed() {
 		return t.lastRecvError
 	}
-
-	frameReceived := make(chan struct{}, 1)
-
-	var readErr error
-	gofunc.GoFunc(t.ctx, func() {
-		_, readErr = t.readUntilTargetFrame(m, codec.FrameTypeData)
-		frameReceived <- struct{}{}
-	})
-
-	select {
-	case <-t.ctx.Done():
-		ctxDoneErr := t.ctx.Err()
-		t.closeRecv(ctxDoneErr)
-		return ctxDoneErr
-	case <-frameReceived:
-		if readErr == io.EOF && t.ri.Invocation().BizStatusErr() != nil {
-			return nil // same behavior as grpc streaming: return nil for biz status error
-		}
-		return readErr
+	message, err := t.readUntilTargetFrame(m, codec.FrameTypeData)
+	if message != nil {
+		defer message.Recycle()
 	}
+	if err == io.EOF && t.ri.Invocation().BizStatusErr() != nil {
+		return nil // same behavior as grpc streaming: return nil for biz status error
+	}
+	return err
 }
 
 func (t *ttheaderStream) SendMsg(m interface{}) (err error) {
@@ -432,40 +493,33 @@ func (t *ttheaderStream) SendMsg(m interface{}) (err error) {
 		return err
 	}
 
-	message, needRecycle := t.newMessageToSend(m, codec.FrameTypeData)
-	if needRecycle {
-		defer message.Recycle()
-	}
-	return t.sendMessage(message)
+	message := t.newMessageToSend(m, codec.FrameTypeData)
+	return t.putMessageToSendQueue(message)
 }
 
-func (t *ttheaderStream) newMessageToSend(m interface{}, frameType string) (msg remote.Message, needRecycle bool) {
+func (t *ttheaderStream) newMessageToSend(m interface{}, frameType string) (msg remote.Message) {
 	if t.rpcRole == remote.Client && frameType == codec.FrameTypeHeader {
-		return t.headerFrame, false // prepared in client_handler.go
+		return t.clientHeader // prepared in client_handler.go
 	}
 	message := remote.NewMessage(m, nil, t.ri, remote.Stream, t.rpcRole)
-	message.SetProtocolInfo(t.headerFrame.ProtocolInfo())
+	message.SetProtocolInfo(t.protocolInfo)
 	message.TransInfo().TransIntInfo()[remote_transmeta.FrameType] = frameType
-	return message, true
+	return message
 }
 
 // Close implements streaming.Stream
 // For client side, the stream can still be used to receive data
 func (t *ttheaderStream) Close() error {
-	if alreadyClosed := t.closeSend(); alreadyClosed {
+	if alreadyClosed := t.closeSend(nil); alreadyClosed {
 		return nil
 	}
 	if t.rpcRole == remote.Server {
 		t.closeRecv(ErrSendClosed) // TODO: compare with grpc streaming
 		t.cancel()                 // release blocking RecvMsg call (if any)
-	} else /* remote.Client */ {
-		// inform the server the client's end of stream
-		clientTrailer, needRecycle := t.newMessageToSend(nil, codec.FrameTypeTrailer)
-		if needRecycle {
-			defer clientTrailer.Recycle()
-		}
-		_ = t.sendMessage(clientTrailer)
 	}
+	// inform the opposite end of stream
+	trailerFrame := t.newMessageToSend(nil, codec.FrameTypeTrailer)
+	_ = t.putMessageToSendQueue(trailerFrame)
 	return nil
 }
 
@@ -488,9 +542,110 @@ func (t *ttheaderStream) closeRecv(err error) {
 }
 
 func (t *ttheaderStream) isSendClosed() bool {
-	return atomic.LoadUint32(&t.sendClosed) == sent
+	return atomic.LoadUint32(&t.sendClosed) == closed
 }
 
-func (t *ttheaderStream) closeSend() (alreadyClosed bool) {
-	return atomic.SwapUint32(&t.sendClosed, closed) == closed
+func (t *ttheaderStream) closeSend(err error) (closedBefore bool) {
+	if atomic.SwapUint32(&t.sendClosed, closed) == closed {
+		return true
+	}
+	t.lastSendError = err
+	return false
+}
+
+func (t *ttheaderStream) frameReceiver() {
+	var err error
+	defer func() {
+		if panicInfo := recover(); panicInfo != nil {
+			err = fmt.Errorf("frameReceiver panic: %v, stack=%s", panicInfo, string(debug.Stack()))
+			klog.CtxWarnf(t.ctx, "%s", err.Error())
+		}
+		if err != nil {
+			t.closeRecv(err)
+		}
+		close(t.receiveQueue) // only one writer in this func, safe to close it here
+	}()
+	for {
+		var frame []byte
+		if frame, err = t.readFrame(); err != nil {
+			if errors.Is(err, netpoll.ErrEOF) {
+				err = nil
+			}
+			return
+		}
+		klog.CtxWarnf(t.ctx, "[%v@%v->%v] frameReceiver: %v", t.id, t.conn.LocalAddr(), t.conn.RemoteAddr(), frame)
+		select {
+		case <-t.ctx.Done():
+			err = t.ctx.Err()
+			return
+		case t.receiveQueue <- frame:
+			if isTrailerFrame(frame) {
+				return
+			}
+		}
+	}
+}
+
+func isTrailerFrame(frame []byte) bool {
+	if len(frame) < codec.Size32*2 {
+		return false
+	}
+	flags := codec.HeaderFlags(binary.BigEndian.Uint16(frame[codec.Size32+codec.Size16:]))
+	return flags&codec.HeaderFlagsStreamingTrailer != 0
+}
+
+func (t *ttheaderStream) readFrame() ([]byte, error) {
+	in := t.ext.NewReadByteBuffer(t.ctx, t.conn, nil)
+	preface, err := in.Peek(codec.Size32 * 4)
+	if err != nil {
+		return nil, err
+	}
+	if !codec.IsTTHeaderStreaming(preface) {
+		return nil, ErrInvalidFrame
+	}
+	size := binary.BigEndian.Uint32(preface)
+	return in.Next(codec.Size32 + int(size)) // framed size + content (ttheader + payload)
+}
+
+func (t *ttheaderStream) messageSender() {
+	var err error
+	defer func() {
+		if panicInfo := recover(); panicInfo != nil {
+			err = fmt.Errorf("messageSender panic: %v, stack=%s", panicInfo, string(debug.Stack()))
+			klog.CtxWarnf(t.ctx, "%v", err.Error())
+		}
+		if err != nil {
+			t.closeSend(err)
+		}
+	}()
+	for {
+		select {
+		case <-t.ctx.Done():
+			err = t.ctx.Err()
+			return
+		case message, ok := <-t.sendQueue:
+			klog.CtxWarnf(t.ctx, "[%v@%v->%v] messageSender: msg=%v, %v", t.id, t.conn.LocalAddr(), t.conn.RemoteAddr(), message.TransInfo(), message.Data())
+			if !ok { // closed: no more message to send
+				return
+			}
+			frameType := codec.MessageFrameType(message)
+			if err = t.writeMessage(message); err != nil {
+				return
+			}
+			if frameType == codec.FrameTypeTrailer {
+				// trailer is the last frame in the stream, so close it (will panic if there's new frame)
+				close(t.sendQueue)
+				return
+			}
+		}
+	}
+}
+
+func (t *ttheaderStream) writeMessage(message remote.Message) error {
+	defer message.Recycle() // not referenced after this, including the HeaderFrame
+	out := t.ext.NewWriteByteBuffer(t.ctx, t.conn, message)
+	if err := t.codec.Marshal(t.ctx, message, out); err != nil {
+		return err
+	}
+	return out.Flush()
 }

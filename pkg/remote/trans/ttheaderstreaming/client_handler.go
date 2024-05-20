@@ -18,7 +18,6 @@ package ttheaderstreaming
 
 import (
 	"context"
-	"fmt"
 	"net"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
@@ -81,7 +80,7 @@ func (t *ttheaderStreamingClientTransHandler) newHeaderMessage(
 
 func (t *ttheaderStreamingClientTransHandler) NewStream(
 	ctx context.Context, svcInfo *kitex.ServiceInfo, conn net.Conn, handler remote.TransReadWriter,
-) (st streaming.Stream, err error) {
+) (streaming.Stream, error) {
 	headerMessage, err := t.newHeaderMessage(ctx, svcInfo)
 	if err != nil {
 		return nil, err
@@ -92,7 +91,6 @@ func (t *ttheaderStreamingClientTransHandler) NewStream(
 		rawStream.loadGRPCMetadata()
 	}
 
-	// TODO: asynchronously send the HeaderFrame? faster for creating a stream
 	if err = rawStream.sendHeaderFrame(); err != nil {
 		return nil, err
 	}
@@ -103,22 +101,11 @@ func (t *ttheaderStreamingClientTransHandler) NewStream(
 		// For example, when service discovery is taken over by a proxy, the proxy should return a MetaFrame,
 		// so that Kitex client can get the real address and set it into RPCInfo; otherwise the tracer may not be
 		// able to get the right address (e.g. for Client Streaming send events)
-		if err = t.readMetaFrame(rawStream); err != nil {
+		if err = rawStream.clientReadMetaFrame(); err != nil {
 			return nil, err
 		}
 	}
 	return rawStream, nil
-}
-
-func (t *ttheaderStreamingClientTransHandler) readMetaFrame(st *ttheaderStream) error {
-	message, err := st.readMessage(nil)
-	if err != nil {
-		return err
-	}
-	if ft := codec.MessageFrameType(message); ft != codec.FrameTypeMeta {
-		return fmt.Errorf("unexpected frame type: expected=%v, got=%v", codec.FrameTypeMeta, ft)
-	}
-	return st.parseMetaFrame(message)
 }
 
 func buildMetaInfo(ctx context.Context) map[string]string {

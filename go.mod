@@ -15,6 +15,7 @@ require (
 	github.com/cloudwego/netpoll v0.6.0
 	github.com/cloudwego/runtimex v0.1.0
 	github.com/cloudwego/thriftgo v0.3.6
+	github.com/felix021/ttheader v0.0.1
 	github.com/golang/mock v1.6.0
 	github.com/google/pprof v0.0.0-20220608213341-c488b8fa1db3
 	github.com/jhump/protoreflect v1.8.2

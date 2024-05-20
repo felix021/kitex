@@ -155,7 +155,7 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 	ctx, ri := t.newCtxWithRPCInfo(ctx, conn)
 	rawStream := newTTHeaderStream(ctx, conn, ri, t.codec, nil, remote.Server, t.ext)
 
-	if _, err = rawStream.readHeaderForServer(t.opt); err != nil {
+	if _, err = rawStream.serverReadHeader(t.opt); err != nil {
 		if errors.Is(err, ErrDirtyFrame) {
 			// There could be dirty frames from the previous stream while the connection has been closed by the client.
 			// Just ignore the error (and drop the frame) since we're not starting a new stream at this moment.
@@ -165,7 +165,7 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 		return fmt.Errorf("KITEX: TTHeader Streaming readHeaderFrame failed, error=%v", err)
 	}
 
-	// tracer is started in rawStream.readHeaderForServer()
+	// tracer is started in rawStream.serverReadHeader()
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
@@ -175,6 +175,16 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 			)
 		}
 		t.finishTracer(ctx, ri, err, panicErr)
+		if panicErr != nil {
+			// make sure a non-nil err is returned to prevent reuse of the connection
+			err = fmt.Errorf("KITEX: TTHeader Streaming panic: %v", panicErr)
+		}
+
+		// always try to send a TrailerFrame after a new stream is accepted
+		if sendErr := rawStream.serverSendTrailer(err); sendErr != nil {
+			t.OnError(ctx, sendErr, conn)
+			err = sendErr
+		}
 	}()
 
 	st := endpoint.NewStreamWithMiddleware(rawStream, t.opt.RecvEndpoint, t.opt.SendEndpoint)
@@ -191,11 +201,6 @@ func (t *ttheaderStreamingTransHandler) OnRead(ctx context.Context, conn net.Con
 	if err != nil {
 		t.OnError(ctx, err, conn)
 		// not returning directly: need to try sending the trailer frame with the error
-	}
-
-	if sendErr := rawStream.sendTrailer(err); sendErr != nil {
-		t.OnError(ctx, sendErr, conn)
-		return sendErr
 	}
 
 	// when err != nil (even if sendErr is nil), a non-nil error should be returned to close the connection;
